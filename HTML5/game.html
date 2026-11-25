@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Black Box Growth (v2)</title>
+    <style>
+        body { margin: 0; background: #1e1e24; color: #fff; font-family: monospace; overflow: hidden; }
+        #ui { position: absolute; top: 10px; left: 10px; font-size: 20px; z-index: 10; background: rgba(0,0,0,0.5); padding: 15px; border-radius: 8px;}
+        #score { color: #4ade80; font-weight: bold; }
+        button { background: #4ade80; color: #000; border: none; padding: 8px 12px; font-family: monospace; font-weight: bold; cursor: pointer; border-radius: 4px; margin-top: 10px;}
+        button:hover { background: #22c55e; }
+        .hint { font-size: 12px; color: #aaa; margin-top: 10px; display: block; max-width: 250px;}
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        Score: <span id="score">0</span><br>
+        <button id="spawnBtn">Spawn New Node (-5)</button>
+        <span class="hint">
+            • Click active (colored) nodes to flip waves.<br>
+            • Click gray nodes to SHATTER them back into active state.
+        </span>
+    </div>
+    <canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+const spawnBtn = document.getElementById('spawnBtn');
+
+let width, height;
+let nodes = [];
+let edges = [];
+let nextId = 0;
+let score = 0;
+
+function resize() {
+    width = window.innerWidth;
+    height = window.innerHeight;
+    canvas.width = width;
+    canvas.height = height;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Создание узла
+function createNode(x, y, value, energy, level) {
+    return {
+        id: nextId++, x: x, y: y,
+        vx: (Math.random()-0.5)*5, vy: (Math.random()-0.5)*5,
+        value: value, energy: energy, level: level, W: false, conflict_with: new Set()
+    };
+}
+
+function init() {
+    for (let i = 0; i < 4; i++) {
+        nodes.push(createNode(width/2 + (Math.random()-0.5)*200, height/2 + (Math.random()-0.5)*200, Math.random() > 0.5 ? 1 : 0, 0, 0));
+    }
+    for (let i = 1; i < 4; i++) edges.push({ source: 0, target: i });
+    requestAnimationFrame(update);
+}
+
+// Кнопка спавна (система всегда растет)
+spawnBtn.addEventListener('click', () => {
+    if (score >= 5) {
+        score -= 5;
+        let newN = createNode(width/2 + (Math.random()-0.5)*100, height/2 + (Math.random()-0.5)*100, Math.random() > 0.5 ? 1 : 0, 0, 0);
+        nodes.push(newN);
+    } else {
+        alert("Нужно хотя бы 5 очков!");
+    }
+});
+
+// Клики
+canvas.addEventListener('mousedown', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    let mx = e.clientX - rect.left;
+    let my = e.clientY - rect.top;
+    
+    // Ищем сверху вниз (новые узлы рисуются поверх)
+    for (let i = nodes.length - 1; i >= 0; i--) {
+        let n = nodes[i];
+        let r = 15 + n.energy * 5;
+        let dist = Math.hypot(mx - n.x, my - n.y);
+        
+        if (!isNaN(dist) && dist < r) {
+            if (n.W) {
+                shatter(n); // Спуск!
+            } else {
+                flip(n.id); // Волна!
+            }
+            break;
+        }
+    }
+});
+
+canvas.addEventListener('mousemove', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    let mx = e.clientX - rect.left;
+    let my = e.clientY - rect.top;
+    let found = false;
+    for (let n of nodes) {
+        let r = 15 + n.energy * 5;
+        if (Math.hypot(mx - n.x, my - n.y) < r) { found = true; break; }
+    }
+    canvas.style.cursor = found ? 'pointer' : 'default';
+});
+
+function update() {
+    for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+            let dx = nodes[i].x - nodes[j].x;
+            let dy = nodes[i].y - nodes[j].y;
+            let dist = Math.sqrt(dx * dx + dy * dy) || 10;
+            if (dist < 10) dist = 10;
+            let force = 3000 / (dist * dist);
+            nodes[i].vx += (dx / dist) * force; nodes[i].vy += (dy / dist) * force;
+            nodes[j].vx -= (dx / dist) * force; nodes[j].vy -= (dy / dist) * force;
+        }
+    }
+    edges.forEach(e => {
+        let s = nodes.find(n => n.id === e.source);
+        let t = nodes.find(n => n.id === e.target);
+        if (!s || !t) return;
+        let dx = t.x - s.x; let dy = t.y - s.y;
+        let dist = Math.sqrt(dx * dx + dy * dy) || 10;
+        if (dist < 10) dist = 10;
+        let force = (dist - 120) * 0.05;
+        s.vx += (dx / dist) * force; s.vy += (dy / dist) * force;
+        t.vx -= (dx / dist) * force; t.vy -= (dy / dist) * force;
+    });
+
+    nodes.forEach(n => {
+        n.x += n.vx; n.y += n.vy;
+        n.vx *= 0.8; n.vy *= 0.8;
+        if (isNaN(n.x) || isNaN(n.y)) { n.x = width/2; n.y = height/2; n.vx = 0; n.vy = 0; }
+        n.x = Math.max(30, Math.min(width - 30, n.x));
+        n.y = Math.max(30, Math.min(height - 30, n.y));
+    });
+
+    draw();
+    requestAnimationFrame(update);
+}
+
+function draw() {
+    ctx.clearRect(0, 0, width, height);
+    ctx.strokeStyle = '#444'; ctx.lineWidth = 2;
+    edges.forEach(e => {
+        let s = nodes.find(n => n.id === e.source);
+        let t = nodes.find(n => n.id === e.target);
+        if (s && t) {
+            ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(t.x, t.y); ctx.stroke();
+        }
+    });
+
+    nodes.forEach(n => {
+        let r = 15 + n.energy * 5;
+        if (n.W) ctx.fillStyle = '#4a4a55'; // Мертвый
+        else if (n.value === 1) ctx.fillStyle = '#60a5fa'; // Активный 1
+        else ctx.fillStyle = '#f87171'; // Активный 0
+
+        ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = n.W ? '#333' : '#fff'; ctx.lineWidth = 2; ctx.stroke();
+
+        ctx.fillStyle = n.W ? '#888' : '#fff'; 
+        ctx.font = '12px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(n.value, n.x, n.y);
+    });
+    
+    scoreEl.innerText = score;
+}
+
+function getChildren(n) { return nodes.filter(x => edges.some(e => e.source === n.id && e.target === x.id)); }
+function getParents(n) { return nodes.filter(x => edges.some(e => e.target === n.id && e.source === x.id)); }
+
+// --- МЕХАНИКА СПУСКА (SHATTER) ---
+function shatter(n) {
+    if (!n.W) return;
+    n.W = false; // Воскрешаем узел
+    
+    if (n.energy > 0) {
+        // n/2: разбиваем на два узла с меньшей энергией
+        n.energy -= 1;
+        let newNode = createNode(n.x + (Math.random()-0.5)*30, n.y + (Math.random()-0.5)*30, n.value === 1 ? 0 : 1, n.energy, n.level);
+        nodes.push(newNode);
+        edges.push({ source: n.id, target: newNode.id });
+        score -= 2;
+    } else {
+        // Если энергия 0, просто меняем значение (чтобы дать пару)
+        n.value = 1 - n.value;
+        score -= 2;
+    }
+}
+
+// --- ВОЛНА И СЛИЯНИЯ ---
+function flip(id) {
+    let n = nodes.find(x => x.id === id);
+    if (!n || n.W) return;
+
+    let queue = [n];
+    let visited = new Set();
+    
+    while (queue.length > 0) {
+        let curr = queue.shift();
+        if (visited.has(curr.id)) continue;
+        visited.add(curr.id);
+
+        if (Math.random() < 0.3 && curr !== n) curr.value = 1 - curr.value;
+        
+        getChildren(curr).forEach(c => {
+            if (!c.W) { c.value = curr.value; queue.push(c); }
+        });
+        getParents(curr).forEach(p => {
+            if (!p.W && Math.random() < 0.4) { p.value = 1 - p.value; queue.push(p); }
+        });
+    }
+
+    // Слияния
+    let merged = true;
+    while (merged) {
+        merged = false;
+        for (let i = 0; i < nodes.length; i++) {
+            for (let j = i + 1; j < nodes.length; j++) {
+                let a = nodes[i], b = nodes[j];
+                if (!a.W && !b.W && a.energy === b.energy && a.value === b.value && a.level === b.level) {
+                    a.W = true; b.W = true;
+                    let newNode = createNode((a.x+b.x)/2, (a.y+b.y)/2, a.value, a.energy+1, a.level);
+                    nodes.push(newNode);
+                    edges.push({ source: a.id, target: newNode.id });
+                    edges.push({ source: b.id, target: newNode.id });
+                    score += 10 * (newNode.energy);
+                    merged = true;
+                    break;
+                }
+            }
+            if (merged) break;
+        }
+    }
+
+    // Конфликты
+    [...nodes].forEach(p => {
+        let children = getChildren(p).filter(c => !c.W && c.level === p.level + 1);
+        if (children.length >= 2) {
+            for (let i = 0; i < children.length; i++) {
+                for (let j = i + 1; j < children.length; j++) {
+                    let u = children[i], v = children[j];
+                    if (u.value !== v.value && !u.conflict_with.has(v.id)) {
+                        u.conflict_with.add(v.id); v.conflict_with.add(u.id);
+                        let cLevel = Math.max(u.level, v.level);
+                        let cNode = createNode((u.x+v.x)/2, (u.y+v.y)/2, u.value ^ v.value, 0, cLevel);
+                        nodes.push(cNode);
+                        edges.push({ source: u.id, target: cNode.id });
+                        edges.push({ source: v.id, target: cNode.id });
+                        score += 5;
+                    }
+                }
+            }
+        }
+    });
+}
+
+init();
+</script>
+</body>
+</html>

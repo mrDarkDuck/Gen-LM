@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Black Box Growth (Turn-Based)</title>
+    <style>
+        body { margin: 0; background: #1e1e24; color: #fff; font-family: monospace; overflow: hidden; }
+        #ui { position: absolute; top: 10px; left: 10px; font-size: 16px; z-index: 10; background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px; pointer-events: none; border: 1px solid #444;}
+        #score { color: #4ade80; font-weight: bold; }
+        #botScore { color: #c084fc; font-weight: bold; }
+        #turnDisplay { font-size: 20px; margin-bottom: 10px; font-weight: bold; color: #fff; }
+        .ap { color: #fbbf24; font-weight: bold; }
+        
+        .controls { margin-top: 15px; display: flex; flex-direction: column; gap: 10px; pointer-events: auto; }
+        button { background: #4ade80; color: #000; border: none; padding: 10px; font-family: monospace; font-weight: bold; cursor: pointer; border-radius: 4px; font-size: 14px;}
+        button:hover { background: #22c55e; }
+        button:disabled { background: #555; color: #888; cursor: not-allowed; }
+        #endTurnBtn { background: #fbbf24; }
+        #endTurnBtn:hover { background: #f59e0b; }
+        
+        .hint { font-size: 11px; color: #aaa; margin-top: 10px; display: block; max-width: 250px; line-height: 1.4;}
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <div id="turnDisplay">YOUR TURN</div>
+        Player Score: <span id="score">0</span> | Bot Score: <span id="botScore">0</span><br>
+        Actions Left: <span id="apDisplay" class="ap">3</span> / 3
+        
+        <div class="controls">
+            <button id="spawnBtn">Spawn Node (-5 pts, 1 AP)</button>
+            <button id="endTurnBtn">End Turn</button>
+        </div>
+
+        <span class="hint">
+            • 1 click = 1 Action Point (AP).<br>
+            • Flip active nodes, Shatter gray nodes, or Spawn.<br>
+            • When AP is 0 (or you press End Turn), Bot moves.<br>
+            • Touch enemy nodes to ASSIMILATE them.
+        </span>
+    </div>
+    <canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+const botScoreEl = document.getElementById('botScore');
+const spawnBtn = document.getElementById('spawnBtn');
+const endTurnBtn = document.getElementById('endTurnBtn');
+const turnDisplay = document.getElementById('turnDisplay');
+const apDisplay = document.getElementById('apDisplay');
+
+let width, height;
+let nodes = [];
+let edges = [];
+let nextId = 0;
+let pScore = 0;
+let bScore = 0;
+
+// Turn system variables
+let turn = 'PLAYER'; // 'PLAYER' or 'BOT'
+let maxAP = 3;
+let pAP = 3;
+let bAP = 3;
+let botActionCooldown = 0;
+
+function resize() {
+    width = window.innerWidth;
+    height = window.innerHeight;
+    canvas.width = width;
+    canvas.height = height;
+}
+window.addEventListener('resize', resize);
+resize();
+
+function createNode(x, y, value, energy, level, faction) {
+    return {
+        id: nextId++, x: x, y: y,
+        vx: (Math.random()-0.5)*5, vy: (Math.random()-0.5)*5,
+        value: value, energy: energy, level: level, W: false,
+        faction: faction, 
+        conflict_with: new Set()
+    };
+}
+
+function init() {
+    for (let i = 0; i < 3; i++) {
+        nodes.push(createNode(width * 0.2 + (Math.random()-0.5)*100, height/2 + (Math.random()-0.5)*100, Math.random() > 0.5 ? 1 : 0, 0, 0, 'P'));
+    }
+    for (let i = 0; i < 3; i++) {
+        nodes.push(createNode(width * 0.8 + (Math.random()-0.5)*100, height/2 + (Math.random()-0.5)*100, Math.random() > 0.5 ? 1 : 0, 0, 0, 'B'));
+    }
+    updateUI();
+    requestAnimationFrame(update);
+}
+
+function updateUI() {
+    scoreEl.innerText = pScore;
+    botScoreEl.innerText = bScore;
+    apDisplay.innerText = pAP;
+    
+    if (turn === 'PLAYER') {
+        turnDisplay.innerText = "YOUR TURN";
+        turnDisplay.style.color = "#4ade80";
+        spawnBtn.disabled = (pScore < 5 || pAP <= 0);
+        endTurnBtn.disabled = false;
+    } else {
+        turnDisplay.innerText = "BOT IS THINKING...";
+        turnDisplay.style.color = "#c084fc";
+        spawnBtn.disabled = true;
+        endTurnBtn.disabled = true;
+    }
+}
+
+function endPlayerTurn() {
+    if (turn !== 'PLAYER') return;
+    turn = 'BOT';
+    bAP = maxAP;
+    botActionCooldown = 30; // Небольшая пауза перед ходом бота
+    updateUI();
+}
+
+endTurnBtn.addEventListener('click', endPlayerTurn);
+
+spawnBtn.addEventListener('click', () => {
+    if (turn !== 'PLAYER' || pAP <= 0 || pScore < 5) return;
+    pScore -= 5;
+    pAP--;
+    
+    let pNodes = nodes.filter(n => n.faction === 'P');
+    let cx = pNodes.length ? pNodes.reduce((s,n)=>s+n.x,0)/pNodes.length : width*0.2;
+    let cy = pNodes.length ? pNodes.reduce((s,n)=>s+n.y,0)/pNodes.length : height/2;
+    nodes.push(createNode(cx + (Math.random()-0.5)*50, cy + (Math.random()-0.5)*50, Math.random() > 0.5 ? 1 : 0, 0, 0, 'P'));
+    
+    if (pAP <= 0) endPlayerTurn();
+    else updateUI();
+});
+
+canvas.addEventListener('mousedown', (e) => {
+    if (turn !== 'PLAYER' || pAP <= 0) return;
+    
+    const rect = canvas.getBoundingClientRect();
+    let mx = e.clientX - rect.left;
+    let my = e.clientY - rect.top;
+    
+    for (let i = nodes.length - 1; i >= 0; i--) {
+        let n = nodes[i];
+        if (n.faction !== 'P') continue;
+        
+        let r = 15 + n.energy * 5;
+        let dist = Math.hypot(mx - n.x, my - n.y);
+        
+        if (!isNaN(dist) && dist < r) {
+            if (n.W) shatter(n);
+            else flip(n.id);
+            
+            pAP--;
+            if (pAP <= 0) endPlayerTurn();
+            else updateUI();
+            break;
+        }
+    }
+});
+
+canvas.addEventListener('mousemove', (e) => {
+    if (turn !== 'PLAYER' || pAP <= 0) { canvas.style.cursor = 'default'; return; }
+    const rect = canvas.getBoundingClientRect();
+    let mx = e.clientX - rect.left;
+    let my = e.clientY - rect.top;
+    let found = false;
+    for (let n of nodes) {
+        if (n.faction !== 'P') continue;
+        let r = 15 + n.energy * 5;
+        if (Math.hypot(mx - n.x, my - n.y) < r) { found = true; break; }
+    }
+    canvas.style.cursor = found ? 'pointer' : 'default';
+});
+
+// --- ЛОГИКА БОТА (Пошаговая) ---
+function botLogic() {
+    if (turn !== 'BOT') return;
+    if (bAP <= 0) {
+        turn = 'PLAYER';
+        pAP = maxAP;
+        updateUI();
+        return;
+    }
+
+    if (botActionCooldown > 0) { botActionCooldown--; return; }
+    botActionCooldown = 30; // Задержка между действиями бота (пол секунды)
+    bAP--;
+
+    let bNodes = nodes.filter(n => n.faction === 'B');
+    if (bNodes.length === 0) {
+        turn = 'PLAYER'; pAP = maxAP; updateUI(); return;
+    }
+
+    // Простой ИИ: пытаемся спавнить, если есть очки, иначе кликаем/взрываем
+    if (bScore >= 5 && Math.random() < 0.4) {
+        bScore -= 5;
+        let cx = bNodes.reduce((s,n)=>s+n.x,0)/bNodes.length;
+        let cy = bNodes.reduce((s,n)=>s+n.y,0)/bNodes.length;
+        nodes.push(createNode(cx + (Math.random()-0.5)*50, cy + (Math.random()-0.5)*50, Math.random() > 0.5 ? 1 : 0, 0, 0, 'B'));
+    } else {
+        let target = bNodes[Math.floor(Math.random() * bNodes.length)];
+        if (target.W) shatter(target);
+        else flip(target.id);
+    }
+    
+    updateUI();
+}
+
+function update() {
+    botLogic();
+
+    // Физика и Ассимиляция
+    for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+            let a = nodes[i];
+            let b = nodes[j];
+            let dx = a.x - b.x;
+            let dy = a.y - b.y;
+            let dist = Math.sqrt(dx * dx + dy * dy) || 10;
+            let rA = 15 + a.energy * 5;
+            let rB = 15 + b.energy * 5;
+
+            if (a.faction !== b.faction && dist < rA + rB) {
+                if (!a.W && !b.W) {
+                    if (a.energy > b.energy) { b.faction = a.faction; b.value = a.value; b.conflict_with.clear(); }
+                    else if (b.energy > a.energy) { a.faction = b.faction; a.value = b.value; a.conflict_with.clear(); }
+                    else { 
+                        a.vx += (dx/dist) * 5; a.vy += (dy/dist) * 5;
+                        b.vx -= (dx/dist) * 5; b.vy -= (dy/dist) * 5;
+                    }
+                } else if (!a.W && b.W) {
+                    b.faction = a.faction; b.value = a.value; b.W = false;
+                } else if (a.W && !b.W) {
+                    a.faction = b.faction; a.value = b.value; a.W = false;
+                }
+            }
+
+            if (dist < 10) dist = 10;
+            let force = 3000 / (dist * dist);
+            a.vx += (dx / dist) * force; a.vy += (dy / dist) * force;
+            b.vx -= (dx / dist) * force; b.vy -= (dy / dist) * force;
+        }
+    }
+    
+    edges.forEach(e => {
+        let s = nodes.find(n => n.id === e.source);
+        let t = nodes.find(n => n.id === e.target);
+        if (!s || !t) return;
+        let dx = t.x - s.x; let dy = t.y - s.y;
+        let dist = Math.sqrt(dx * dx + dy * dy) || 10;
+        if (dist < 10) dist = 10;
+        let force = (dist - 100) * 0.05;
+        s.vx += (dx / dist) * force; s.vy += (dy / dist) * force;
+        t.vx -= (dx / dist) * force; t.vy -= (dy / dist) * force;
+    });
+
+    nodes.forEach(n => {
+        n.x += n.vx; n.y += n.vy;
+        n.vx *= 0.85; n.vy *= 0.85;
+        if (isNaN(n.x) || isNaN(n.y)) { n.x = width/2; n.y = height/2; n.vx = 0; n.vy = 0; }
+        n.x = Math.max(30, Math.min(width - 30, n.x));
+        n.y = Math.max(30, Math.min(height - 30, n.y));
+    });
+
+    draw();
+    requestAnimationFrame(update);
+}
+
+function draw() {
+    ctx.clearRect(0, 0, width, height);
+    
+    // Если ход бота, слегка затемняем экран
+    if (turn === 'BOT') {
+        ctx.fillStyle = 'rgba(0,0,0,0.2)';
+        ctx.fillRect(0, 0, width, height);
+    }
+
+    ctx.strokeStyle = '#444'; ctx.lineWidth = 2;
+    edges.forEach(e => {
+        let s = nodes.find(n => n.id === e.source);
+        let t = nodes.find(n => n.id === e.target);
+        if (s && t) {
+            ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(t.x, t.y); ctx.stroke();
+        }
+    });
+
+    nodes.forEach(n => {
+        let r = 15 + n.energy * 5;
+        if (n.faction === 'P') {
+            if (n.W) ctx.fillStyle = '#4a4a55'; 
+            else ctx.fillStyle = n.value === 1 ? '#60a5fa' : '#f87171'; 
+        } else {
+            if (n.W) ctx.fillStyle = '#2a2a30'; 
+            else ctx.fillStyle = n.value === 1 ? '#4ade80' : '#c084fc'; 
+        }
+
+        ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = n.W ? '#333' : '#fff'; ctx.lineWidth = 2; ctx.stroke();
+
+        if (!n.W) {
+            ctx.fillStyle = '#fff'; 
+            ctx.font = '12px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(n.value, n.x, n.y);
+        }
+    });
+}
+
+function getChildren(n) { return nodes.filter(x => edges.some(e => e.source === n.id && e.target === x.id)); }
+function getParents(n) { return nodes.filter(x => edges.some(e => e.target === n.id && e.source === x.id)); }
+
+function shatter(n) {
+    if (!n.W) return;
+    n.W = false;
+    if (n.faction === 'P') pScore -= 2; else bScore -= 2;
+
+    if (n.energy > 0) {
+        n.energy -= 1;
+        let newNode = createNode(n.x + (Math.random()-0.5)*30, n.y + (Math.random()-0.5)*30, n.value === 1 ? 0 : 1, n.energy, n.level, n.faction);
+        nodes.push(newNode);
+        edges.push({ source: n.id, target: newNode.id });
+    } else {
+        n.value = 1 - n.value;
+    }
+}
+
+function flip(id) {
+    let n = nodes.find(x => x.id === id);
+    if (!n || n.W) return;
+
+    let queue = [n];
+    let visited = new Set();
+    
+    while (queue.length > 0) {
+        let curr = queue.shift();
+        if (visited.has(curr.id)) continue;
+        visited.add(curr.id);
+
+        if (Math.random() < 0.3 && curr !== n) curr.value = 1 - curr.value;
+        
+        getChildren(curr).forEach(c => {
+            if (!c.W && c.faction === curr.faction) { c.value = curr.value; queue.push(c); }
+        });
+        getParents(curr).forEach(p => {
+            if (!p.W && p.faction === curr.faction && Math.random() < 0.4) { p.value = 1 - p.value; queue.push(p); }
+        });
+    }
+
+    let merged = true;
+    while (merged) {
+        merged = false;
+        for (let i = 0; i < nodes.length; i++) {
+            for (let j = i + 1; j < nodes.length; j++) {
+                let a = nodes[i], b = nodes[j];
+                if (!a.W && !b.W && a.faction === b.faction && a.energy === b.energy && a.value === b.value && a.level === b.level) {
+                    a.W = true; b.W = true;
+                    let newNode = createNode((a.x+b.x)/2, (a.y+b.y)/2, a.value, a.energy+1, a.level, a.faction);
+                    nodes.push(newNode);
+                    edges.push({ source: a.id, target: newNode.id });
+                    edges.push({ source: b.id, target: newNode.id });
+                    if (a.faction === 'P') pScore += 10 * newNode.energy; else bScore += 10 * newNode.energy;
+                    merged = true;
+                    break;
+                }
+            }
+            if (merged) break;
+        }
+    }
+
+    [...nodes].forEach(p => {
+        if (p.faction !== n.faction) return;
+        let children = getChildren(p).filter(c => !c.W && c.faction === p.faction && c.level === p.level + 1);
+        if (children.length >= 2) {
+            for (let i = 0; i < children.length; i++) {
+                for (let j = i + 1; j < children.length; j++) {
+                    let u = children[i], v = children[j];
+                    if (u.value !== v.value && !u.conflict_with.has(v.id)) {
+                        u.conflict_with.add(v.id); v.conflict_with.add(u.id);
+                        let cLevel = Math.max(u.level, v.level);
+                        let cNode = createNode((u.x+v.x)/2, (u.y+v.y)/2, u.value ^ v.value, 0, cLevel, u.faction);
+                        nodes.push(cNode);
+                        edges.push({ source: u.id, target: cNode.id });
+                        edges.push({ source: v.id, target: cNode.id });
+                        if (u.faction === 'P') pScore += 5; else bScore += 5;
+                    }
+                }
+            }
+        }
+    });
+}
+
+init();
+</script>
+</body>
+</html>
