@@ -1,4 +1,4 @@
-Direct link, copy and paste to adress/URL bar.
+Direct link, copy and paste to adress/URL bar or click it ;).
 
 https://mrdarkduck.github.io/Gen-LM/HTML5/AI_translate.html
 
