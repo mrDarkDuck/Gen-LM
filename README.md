@@ -48,3 +48,7 @@ Canvas API — graph visualization and node physics.
 
 #Quick Start:
 https://github.com/mrDarkDuck/Gen-LM/blob/main/HTML5/README.md
+
+## 📐 Theoretical Background
+The mathematical description of the model (state spaces, merge operations, invariants, and asymptotic properties) is available in a separate document.
+👉 **[Read THEORY_EN.md](THEORY_EN.md)**
