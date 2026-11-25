@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>AI Translator (NLLB-200)</title>
+    <style>
+        :root { --bg: #0f172a; --panel: #1e293b; --text: #f8fafc; --accent: #3b82f6; --success: #4ade80; }
+        body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; height: 100vh; overflow: hidden; }
+        
+        #sidebar { width: 400px; background: var(--panel); padding: 30px; display: flex; flex-direction: column; border-right: 1px solid #334155; box-shadow: 5px 0 20px rgba(0,0,0,0.3); z-index: 10; }
+        h1 { margin-top: 0; font-size: 24px; color: var(--accent); font-family: monospace; }
+        p.subtitle { font-size: 13px; color: #94a3b8; margin-bottom: 20px; }
+        
+        .lang-selector { display: flex; gap: 10px; margin-bottom: 15px; }
+        select { flex: 1; padding: 10px; background: #0f172a; border: 1px solid #475569; color: #fff; border-radius: 8px; font-family: inherit; font-size: 14px; outline: none; cursor: pointer; }
+        select:focus { border-color: var(--accent); }
+        
+        textarea { width: 100%; height: 120px; padding: 15px; background: #0f172a; border: 1px solid #475569; color: #fff; border-radius: 8px; font-size: 16px; resize: none; box-sizing: border-box; margin-bottom: 15px; font-family: inherit; outline: none; transition: border-color 0.2s;}
+        textarea:focus { border-color: var(--accent); }
+        
+        button { width: 100%; padding: 15px; background: var(--accent); color: #fff; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; transition: background 0.2s; }
+        button:hover { background: #2563eb; }
+        button:disabled { background: #475569; cursor: not-allowed; }
+        
+        #status { margin-top: auto; font-size: 12px; color: #fbbf24; font-family: monospace; padding: 10px; background: #0f172a; border-radius: 6px; text-align: center;}
+
+        #history { flex: 1; padding: 40px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; scroll-behavior: smooth; }
+        
+        .card { background: var(--panel); border-radius: 12px; padding: 20px; border: 1px solid #334155; animation: slideIn 0.3s ease-out; }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .lang-badge { font-size: 11px; font-weight: bold; padding: 4px 8px; border-radius: 4px; background: #334155; color: #cbd5e1; }
+        
+        .text-ru { font-size: 18px; margin-bottom: 15px; color: #e2e8f0; }
+        .divider { height: 1px; background: #334155; margin: 15px 0; }
+        .text-en { font-size: 18px; color: var(--success); font-weight: 500; }
+    </style>
+</head>
+<body>
+
+    <div id="sidebar">
+        <h1>AI Translator</h1>
+        <p class="subtitle">NLLB-200: перевод между 200 языками прямо в браузере.</p>
+        
+        <div class="lang-selector">
+            <select id="srcLang" disabled>
+                <option value="rus_Cyrl">Русский</option>
+                <option value="eng_Latn">Английский</option>
+                <option value="spa_Latn">Испанский</option>
+                <option value="fra_Latn">Французский</option>
+                <option value="deu_Latn">Немецкий</option>
+                <option value="zho_Hans">Китайский (упр.)</option>
+                <option value="jpn_Jpan">Японский</option>
+                <option value="ara_Arab">Арабский</option>
+            </select>
+            <select id="tgtLang" disabled>
+                <option value="eng_Latn">Английский</option>
+                <option value="rus_Cyrl">Русский</option>
+                <option value="spa_Latn">Испанский</option>
+                <option value="fra_Latn">Французский</option>
+                <option value="deu_Latn">Немецкий</option>
+                <option value="zho_Hans">Китайский (упр.)</option>
+                <option value="jpn_Jpan">Японский</option>
+                <option value="ara_Arab">Арабский</option>
+            </select>
+        </div>
+
+        <textarea id="inputText" placeholder="Введите текст..." disabled></textarea>
+        <button id="translateBtn" disabled>Перевести</button>
+        
+        <div id="status">Загрузка модели NLLB-200 (может занять до минуты)...</div>
+    </div>
+
+    <div id="history"></div>
+
+<script type="module">
+    import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2';
+    env.allowLocalModels = false;
+
+    const inputText = document.getElementById('inputText');
+    const translateBtn = document.getElementById('translateBtn');
+    const statusEl = document.getElementById('status');
+    const historyEl = document.getElementById('history');
+    const srcLangSelect = document.getElementById('srcLang');
+    const tgtLangSelect = document.getElementById('tgtLang');
+    
+    let translator = null;
+    let embedder = null;
+    let isProcessing = false;
+
+    async function initModels() {
+        try {
+            statusEl.innerText = "Загрузка переводчика NLLB-200 (600M)...";
+            translator = await pipeline('translation', 'Xenova/nllb-200-distilled-600M', { quantized: true });
+            
+            statusEl.innerText = "Загрузка модели смыслов (MiniLM)...";
+            embedder = await pipeline('feature-extraction', 'Xenova/paraphrase-multilingual-MiniLM-L12-v2', { quantized: true });
+            
+            statusEl.innerText = "✅ Готово! Выберите языки и вводите текст.";
+            statusEl.style.color = "#4ade80";
+            inputText.disabled = false;
+            translateBtn.disabled = false;
+            srcLangSelect.disabled = false;
+            tgtLangSelect.disabled = false;
+        } catch (e) {
+            statusEl.innerText = "❌ Ошибка загрузки. Проверьте консоль.";
+            console.error(e);
+        }
+    }
+
+    function cosineSimilarity(vecA, vecB) {
+        let dot = 0, magA = 0, magB = 0;
+        for (let i = 0; i < vecA.length; i++) {
+            dot += vecA[i] * vecB[i];
+            magA += vecA[i] * vecA[i];
+            magB += vecB[i] * vecB[i];
+        }
+        if (magA === 0 || magB === 0) return 0;
+        return dot / (Math.sqrt(magA) * Math.sqrt(magB));
+    }
+
+    async function getEmbedding(text) {
+        const output = await embedder(text, { pooling: 'mean', normalize: true });
+        return Array.from(output.data);
+    }
+
+    async function processTranslation() {
+        if (isProcessing || !translator) return;
+        let text = inputText.value.trim();
+        if (!text) return;
+        
+        const srcLang = srcLangSelect.value;
+        const tgtLang = tgtLangSelect.value;
+        
+        if (srcLang === tgtLang) {
+            alert("Исходный и целевой языки совпадают.");
+            return;
+        }
+
+        isProcessing = true;
+        translateBtn.disabled = true;
+        translateBtn.innerText = "Думаю...";
+        
+        try {
+            // Перевод с указанием языков
+            const translationResult = await translator(text, {
+                src_lang: srcLang,
+                tgt_lang: tgtLang
+            });
+            let translatedText = translationResult[0].translation_text;
+
+            // Смысловое сходство (опционально)
+            let srcVec = await getEmbedding(text);
+            let tgtVec = await getEmbedding(translatedText);
+            let sim = cosineSimilarity(srcVec, tgtVec);
+            let simPercent = Math.round(sim * 100);
+
+            addCard(text, translatedText, srcLang, tgtLang, simPercent);
+            
+            inputText.value = '';
+        } catch (e) {
+            console.error(e);
+            statusEl.innerText = "❌ Ошибка перевода.";
+        }
+        
+        isProcessing = false;
+        translateBtn.disabled = false;
+        translateBtn.innerText = "Перевести";
+    }
+
+    function addCard(original, translated, srcLang, tgtLang, simPercent) {
+        let card = document.createElement('div');
+        card.className = 'card';
+
+        const langNames = {
+            'rus_Cyrl': 'Русский', 'eng_Latn': 'Английский', 'spa_Latn': 'Испанский',
+            'fra_Latn': 'Французский', 'deu_Latn': 'Немецкий', 'zho_Hans': 'Китайский',
+            'jpn_Jpan': 'Японский', 'ara_Arab': 'Арабский'
+        };
+        let srcName = langNames[srcLang] || srcLang;
+        let tgtName = langNames[tgtLang] || tgtLang;
+
+        card.innerHTML = `
+            <div class="card-header">
+                <span class="lang-badge">${srcName}</span>
+                <span class="lang-badge" style="color: #60a5fa; border: 1px solid #60a5fa; background: transparent;">${tgtName}</span>
+            </div>
+            
+            <div class="text-ru">${original}</div>
+            <div class="divider"></div>
+            <div class="text-en">${translated}</div>
+        `;
+
+        historyEl.appendChild(card);
+        setTimeout(() => { historyEl.scrollTop = historyEl.scrollHeight; }, 100);
+    }
+
+    translateBtn.addEventListener('click', processTranslation);
+    inputText.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.key === 'Enter') processTranslation();
+    });
+
+    initModels();
+</script>
+</body>
+</html>

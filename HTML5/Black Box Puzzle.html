@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Black Box Semantic Puzzle</title>
+    <style>
+        body { margin: 0; background: #0f172a; color: #fff; font-family: monospace; overflow: hidden; }
+        #ui { position: absolute; top: 20px; left: 20px; z-index: 10; background: rgba(15, 23, 42, 0.95); padding: 20px; border-radius: 12px; border: 1px solid #334155; box-shadow: 0 10px 25px rgba(0,0,0,0.7); width: 340px;}
+        h2 { margin-top: 0; color: #60a5fa; }
+        .mission { background: #1e293b; padding: 10px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #fbbf24; }
+        .mission-title { font-size: 10px; color: #fbbf24; text-transform: uppercase; letter-spacing: 1px; }
+        .mission-text { font-size: 16px; font-weight: bold; margin-top: 5px;}
+        
+        input[type="text"] { width: 100%; padding: 10px; background: #0f172a; border: 1px solid #475569; color: #fff; font-family: monospace; border-radius: 6px; box-sizing: border-box; margin-bottom: 10px;}
+        button { width: 100%; padding: 10px; background: #3b82f6; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s;}
+        button:hover { background: #2563eb; }
+        button:disabled { background: #475569; cursor: not-allowed; }
+        
+        #log { margin-top: 15px; font-size: 12px; color: #94a3b8; height: 120px; overflow-y: auto; border-top: 1px solid #334155; padding-top: 10px;}
+        .success { color: #4ade80; font-weight: bold; }
+        .fail { color: #f87171; }
+        
+        #status { font-size: 11px; color: #fbbf24; margin-bottom: 10px; min-height: 15px;}
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <h2>Black Box Puzzle</h2>
+        
+        <div class="mission">
+            <div class="mission-title">Current Mission (Level <span id="levelNum">1</span>)</div>
+            <div class="mission-text" id="missionText">Loading...</div>
+        </div>
+
+        <div id="status">Loading embedding model...</div>
+        <input type="text" id="wordInput" placeholder="Enter a bridge word..." autocomplete="off" disabled>
+        <button id="feedBtn" disabled>Test Word</button>
+        
+        <div id="log"><div>[System] Initialize...</div></div>
+    </div>
+    <canvas id="canvas"></canvas>
+
+<script type="module">
+    import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2';
+    env.allowLocalModels = false;
+
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const logEl = document.getElementById('log');
+    const statusEl = document.getElementById('status');
+    const inputEl = document.getElementById('wordInput');
+    const feedBtn = document.getElementById('feedBtn');
+    const missionText = document.getElementById('missionText');
+    const levelNumEl = document.getElementById('levelNum');
+
+    let width, height;
+    let nodes = [];
+    let nextId = 0;
+    let extractor = null;
+    let isProcessing = false;
+
+    // --- УРОВНИ ИГРЫ ---
+    const LEVELS = [
+        { targets: ["apple", "banana"], hint: "Fruits" },
+        { targets: ["russia", "france", "usa"], hint: "Countries" },
+        { targets: ["car", "train", "plane"], hint: "Transport" }
+    ];
+    let currentLevel = 0;
+    let currentBridgeWord = null; // Слово, которое ввел игрок
+
+    // Скрытый порог, который игрок должен нащупать
+    const HIDDEN_THRESHOLD = 0.42; 
+
+    function resize() {
+        width = window.innerWidth;
+        height = window.innerHeight;
+        canvas.width = width;
+        canvas.height = height;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    function log(msg, className = "") {
+        let div = document.createElement('div');
+        div.innerHTML = "> " + msg;
+        if (className) div.className = className;
+        logEl.appendChild(div);
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    async function initModel() {
+        try {
+            log("Downloading MiniLM model...");
+            extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { quantized: true });
+            statusEl.innerText = "✅ Model ready.";
+            inputEl.disabled = false;
+            feedBtn.disabled = false;
+            startLevel(0);
+        } catch (e) {
+            statusEl.innerText = "❌ Error loading model.";
+            console.error(e);
+        }
+    }
+
+    function cosineSimilarity(vecA, vecB) {
+        let dot = 0, magA = 0, magB = 0;
+        for (let i = 0; i < vecA.length; i++) {
+            dot += vecA[i] * vecB[i];
+            magA += vecA[i] * vecA[i];
+            magB += vecB[i] * vecB[i];
+        }
+        if (magA === 0 || magB === 0) return 0;
+        return dot / (Math.sqrt(magA) * Math.sqrt(magB));
+    }
+
+    class Node {
+        constructor(word, vec, energy=0) {
+            this.id = nextId++;
+            this.word = word;
+            this.displayWord = word;
+            this.vec = vec;
+            this.energy = energy;
+            this.activation = 0;
+            this.W = false;
+            this.edges = [];
+            this.x = width/2 + (Math.random()-0.5)*400;
+            this.y = height/2 + (Math.random()-0.5)*400;
+            this.vx = 0; this.vy = 0;
+        }
+    }
+
+    async function getEmbedding(text) {
+        if (!extractor) return null;
+        try {
+            const output = await extractor(text, { pooling: 'mean', normalize: true });
+            return Array.from(output.data);
+        } catch (e) { return null; }
+    }
+
+    async function createNode(word) {
+        let vec = await getEmbedding(word);
+        if (!vec) return null;
+        let node = new Node(word, vec);
+        nodes.push(node);
+        return node;
+    }
+
+    async function startLevel(levelIndex) {
+        currentLevel = levelIndex;
+        nodes = []; // Очищаем граф
+        nextId = 0;
+        currentBridgeWord = null;
+        
+        if (levelIndex >= LEVELS.length) {
+            missionText.innerHTML = "🎉 ALL LEVELS COMPLETE! You mastered the Black Box.";
+            inputEl.disabled = true;
+            feedBtn.disabled = true;
+            return;
+        }
+
+        let level = LEVELS[levelIndex];
+        levelNumEl.innerText = levelIndex + 1;
+        missionText.innerHTML = `Connect <b>${level.targets.join("</b> and <b>")}</b>`;
+        
+        log(`--- Level ${levelIndex + 1} Started ---`, "success");
+        log(`Goal: ${level.targets.join(", ")}`);
+
+        // Создаем целевые слова
+        for (let target of level.targets) {
+            await createNode(target);
+        }
+        
+        // Разбрасываем их по экрану
+        nodes.forEach((n, i) => {
+            n.x = width/2 + Math.cos(i * 2 * Math.PI / nodes.length) * 150;
+            n.y = height/2 + Math.sin(i * 2 * Math.PI / nodes.length) * 150;
+        });
+
+        statusEl.innerText = "Type a word to bridge them.";
+    }
+
+    async function testBridgeWord() {
+        if (isProcessing || !extractor) return;
+        let word = inputEl.value.toLowerCase().trim();
+        if (!word) return;
+        
+        isProcessing = true;
+        feedBtn.disabled = true;
+        statusEl.innerText = "Computing...";
+        
+        let level = LEVELS[currentLevel];
+        
+        // Если игрок уже ввел слово, но хочет перепроверить - сбрасываем прошлый мост
+        if (currentBridgeWord) {
+            nodes = nodes.filter(n => !n.isBridge);
+        }
+
+        let bridgeNode = await createNode(word);
+        bridgeNode.isBridge = true;
+        currentBridgeWord = word;
+
+        // Ставим мост в центр
+        bridgeNode.x = width / 2;
+        bridgeNode.y = height / 2;
+
+        let successes = 0;
+
+        // Связываем с целевыми словами
+        for (let target of level.targets) {
+            let targetNode = nodes.find(n => n.word === target);
+            if (targetNode) {
+                let sim = cosineSimilarity(bridgeNode.vec, targetNode.vec);
+                
+                // Если сходство выше скрытого порога - создаем связь
+                if (sim > HIDDEN_THRESHOLD) {
+                    bridgeNode.edges.push({ target: targetNode, weight: 1 });
+                    targetNode.edges.push({ target: bridgeNode, weight: 1 });
+                    successes++;
+                }
+            }
+        }
+
+        // Оценка результата
+        if (successes === level.targets.length) {
+            log(`SUCCESS! "${word}" is a perfect bridge.`, "success");
+            
+            // Даем волне пройти и запускаем слияние
+            setTimeout(() => {
+                // Сливаем в концепт
+                let newVec = bridgeNode.vec.map((v, idx) => (v + nodes.find(n=>n.word===level.targets[0]).vec[idx]) / 2);
+                let concept = new Node("E1_Concept", newVec, 1);
+                concept.displayWord = `(${word})`;
+                concept.x = bridgeNode.x; concept.y = bridgeNode.y;
+                
+                nodes.forEach(n => { if (n.word === word || level.targets.includes(n.word)) n.W = true; });
+                concept.edges = bridgeNode.edges.map(e => e);
+                nodes.push(concept);
+                
+                statusEl.innerText = "Level Complete!";
+                log(`Level ${currentLevel + 1} Complete!`, "success");
+                
+                // Переход на следующий уровень через 2 секунды
+                setTimeout(() => startLevel(currentLevel + 1), 2000);
+            }, 1000);
+            
+        } else if (successes > 0) {
+            log(`PARTIAL. "${word}" connects to some, but not all.`, "");
+            statusEl.innerText = "Partial connection. Try another word.";
+        } else {
+            log(`FAIL. "${word}" is too far semantically.`, "fail");
+            statusEl.innerText = "Failed. Try a broader category.";
+        }
+        
+        inputEl.value = '';
+        isProcessing = false;
+        feedBtn.disabled = false;
+    }
+
+    feedBtn.addEventListener('click', testBridgeWord);
+    inputEl.addEventListener('keypress', (e) => { if (e.key === 'Enter') testBridgeWord(); });
+
+    function updateDynamics() {
+        nodes.forEach(n => {
+            if (!n.W) {
+                n.activation *= 0.92;
+                if (n.activation < 0.1) n.activation = 0;
+            }
+        });
+        nodes.forEach(n => {
+            if (n.activation > 10 && !n.W) {
+                let degree = Math.max(1, n.edges.length);
+                n.edges.forEach(e => {
+                    let transfer = n.activation * 0.15 * (e.weight / degree);
+                    e.target.activation += transfer;
+                });
+                n.activation *= 0.8; 
+            }
+        });
+    }
+
+    function updatePhysics() {
+        for (let i = 0; i < nodes.length; i++) {
+            for (let j = i + 1; j < nodes.length; j++) {
+                let dx = nodes[i].x - nodes[j].x;
+                let dy = nodes[i].y - nodes[j].y;
+                let dist = Math.sqrt(dx*dx + dy*dy) || 1;
+                let force = 3000 / (dist * dist);
+                nodes[i].vx += (dx/dist) * force; nodes[i].vy += (dy/dist) * force;
+                nodes[j].vx -= (dx/dist) * force; nodes[j].vy -= (dy/dist) * force;
+            }
+        }
+        nodes.forEach(n => {
+            n.edges.forEach(e => {
+                let dx = e.target.x - n.x;
+                let dy = e.target.y - n.y;
+                let dist = Math.sqrt(dx*dx + dy*dy) || 1;
+                let force = (dist - 120) * 0.03;
+                n.vx += (dx/dist) * force; n.vy += (dy/dist) * force;
+                e.target.vx -= (dx/dist) * force; e.target.vy -= (dy/dist) * force;
+            });
+        });
+        nodes.forEach(n => {
+            n.x += n.vx; n.y += n.vy;
+            n.vx *= 0.85; n.vy *= 0.85;
+            n.x = Math.max(30, Math.min(width - 30, n.x));
+            n.y = Math.max(30, Math.min(height - 30, n.y));
+        });
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, width, height);
+        nodes.forEach(n => {
+            n.edges.forEach(e => {
+                ctx.beginPath();
+                ctx.moveTo(n.x, n.y);
+                ctx.lineTo(e.target.x, e.target.y);
+                let glow = Math.min(n.activation, e.target.activation) / 100;
+                ctx.strokeStyle = `rgba(96, 165, 250, ${0.2 + glow * 0.8})`;
+                ctx.lineWidth = 2 + glow * 3;
+                ctx.stroke();
+            });
+        });
+
+        nodes.forEach(n => {
+            let r = 20 + n.energy * 15;
+            
+            let baseColor;
+            if (n.W) baseColor = [100, 116, 139]; 
+            else if (n.energy === 0) baseColor = [74, 222, 128]; // Зеленый
+            else baseColor = [167, 139, 250]; // Фиолетовый
+
+            // Подсветка, если это мост
+            if (n.isBridge && !n.W) baseColor = [251, 191, 36]; // Золотой
+
+            let glow = Math.min(n.activation / 50, 1);
+            let rC = baseColor[0] + (255 - baseColor[0]) * glow;
+            let gC = baseColor[1] + (255 - baseColor[1]) * glow;
+            let bC = baseColor[2] + (255 - baseColor[2]) * glow;
+
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, r + glow * 10, 0, Math.PI * 2);
+            ctx.fillStyle = `rgb(${rC}, ${gC}, ${bC})`;
+            ctx.fill();
+            
+            ctx.strokeStyle = n.isBridge ? '#fff' : (n.W ? '#333' : 'rgba(255,255,255,0.5)');
+            ctx.lineWidth = n.isBridge ? 3 : 1;
+            ctx.stroke();
+
+            ctx.fillStyle = n.W ? '#475569' : '#fff';
+            ctx.font = 'bold 13px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(n.displayWord, n.x, n.y + r + 15);
+        });
+    }
+
+    function loop() {
+        updateDynamics();
+        updatePhysics();
+        draw();
+        requestAnimationFrame(loop);
+    }
+
+    (async () => {
+        await initModel();
+        loop();
+    })();
+</script>
+</body>
+</html>

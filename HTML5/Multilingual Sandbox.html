@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Multilingual Semantic Sandbox</title>
+    <style>
+        body { margin: 0; background: #0f172a; color: #fff; font-family: monospace; overflow: hidden; }
+        #ui { position: absolute; top: 20px; left: 20px; z-index: 10; background: rgba(15, 23, 42, 0.95); padding: 20px; border-radius: 12px; border: 1px solid #334155; box-shadow: 0 10px 25px rgba(0,0,0,0.7); width: 340px;}
+        h2 { margin-top: 0; color: #c084fc; }
+        
+        input[type="text"] { width: 100%; padding: 10px; background: #0f172a; border: 1px solid #475569; color: #fff; font-family: monospace; border-radius: 6px; box-sizing: border-box; margin-bottom: 10px;}
+        button { width: 100%; padding: 10px; background: #8b5cf6; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s;}
+        button:hover { background: #7c3aed; }
+        button:disabled { background: #475569; cursor: not-allowed; }
+        
+        .slider-container { margin: 15px 0; font-size: 12px; color: #cbd5e1; }
+        input[type="range"] { width: 100%; margin-top: 5px; cursor: pointer; }
+        .slider-val { color: #c084fc; font-weight: bold; float: right;}
+        
+        #log { margin-top: 15px; font-size: 12px; color: #94a3b8; height: 150px; overflow-y: auto; border-top: 1px solid #334155; padding-top: 10px;}
+        #status { font-size: 11px; color: #fbbf24; margin-bottom: 10px; min-height: 15px;}
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <h2>Multilingual Sandbox</h2>
+        <div id="status">Downloading multilingual model (120MB)...</div>
+        <input type="text" id="wordInput" placeholder="Enter word (e.g. apple, яблоко, pomme)" autocomplete="off" disabled>
+        <button id="feedBtn" disabled>Embed Word</button>
+        
+        <div class="slider-container">
+            Merge Threshold <span id="thresholdVal" class="slider-val">0.85</span>
+            <input type="range" id="thresholdSlider" min="0.5" max="0.95" step="0.01" value="0.85" disabled>
+        </div>
+        <div id="log"><div>[System] Initializing...</div></div>
+    </div>
+    <canvas id="canvas"></canvas>
+
+<script type="module">
+    import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2';
+    env.allowLocalModels = false;
+
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const logEl = document.getElementById('log');
+    const statusEl = document.getElementById('status');
+    const inputEl = document.getElementById('wordInput');
+    const feedBtn = document.getElementById('feedBtn');
+    const slider = document.getElementById('thresholdSlider');
+    const thresholdVal = document.getElementById('thresholdVal');
+    
+    // Мультиязычная модель понимает 50+ языков
+    let mergeThreshold = 0.85;
+
+    let width, height;
+    let nodes = [];
+    let nextId = 0;
+    let extractor = null;
+    let isProcessing = false;
+
+    function resize() {
+        width = window.innerWidth;
+        height = window.innerHeight;
+        canvas.width = width;
+        canvas.height = height;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    function log(msg) {
+        let div = document.createElement('div');
+        div.innerText = "> " + msg;
+        logEl.appendChild(div);
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    async function initModel() {
+        try {
+            log("Downloading Multilingual MiniLM...");
+            // Модель, которая знает русский, английский, французский и т.д.
+            extractor = await pipeline('feature-extraction', 'Xenova/paraphrase-multilingual-MiniLM-L12-v2', { quantized: true });
+            statusEl.innerText = "✅ Model loaded.";
+            inputEl.disabled = false;
+            feedBtn.disabled = false;
+            slider.disabled = false;
+            log("Model loaded! Try entering translations.");
+            
+            // Начинаем с пустого поля
+            log("Try typing: apple, яблоко, pomme");
+        } catch (e) {
+            statusEl.innerText = "❌ Error loading model.";
+            console.error(e);
+        }
+    }
+
+    function cosineSimilarity(vecA, vecB) {
+        let dot = 0, magA = 0, magB = 0;
+        for (let i = 0; i < vecA.length; i++) {
+            dot += vecA[i] * vecB[i];
+            magA += vecA[i] * vecA[i];
+            magB += vecB[i] * vecB[i];
+        }
+        if (magA === 0 || magB === 0) return 0;
+        return dot / (Math.sqrt(magA) * Math.sqrt(magB));
+    }
+
+    class Node {
+        constructor(word, vec, energy=0) {
+            this.id = nextId++;
+            this.word = word;
+            this.displayWord = word;
+            this.vec = vec;
+            this.energy = energy;
+            this.activation = 0;
+            this.W = false;
+            this.edges = [];
+            this.x = width/2 + (Math.random()-0.5)*400;
+            this.y = height/2 + (Math.random()-0.5)*400;
+            this.vx = 0; this.vy = 0;
+        }
+    }
+
+    async function getEmbedding(text) {
+        if (!extractor) return null;
+        try {
+            const output = await extractor(text, { pooling: 'mean', normalize: true });
+            return Array.from(output.data);
+        } catch (e) { return null; }
+    }
+
+    async function feedWord() {
+        if (isProcessing || !extractor) return;
+        let word = inputEl.value.toLowerCase().trim();
+        if (!word) return;
+        
+        isProcessing = true;
+        feedBtn.disabled = true;
+        statusEl.innerText = "Computing embedding...";
+        
+        let existing = nodes.find(n => n.word === word && !n.W);
+        if (!existing) {
+            let vec = await getEmbedding(word);
+            if (vec) {
+                let node = new Node(word, vec);
+                nodes.push(node);
+                log(`✨ Embedded: "${word}"`);
+                node.activation = 100; // Подсвечиваем новое слово
+            }
+        } else {
+            existing.activation = 100; // Подсвечиваем старое
+        }
+        
+        inputEl.value = '';
+        statusEl.innerText = "✅ Ready.";
+        feedBtn.disabled = false;
+        isProcessing = false;
+    }
+
+    feedBtn.addEventListener('click', feedWord);
+    inputEl.addEventListener('keypress', (e) => { if (e.key === 'Enter') feedWord(); });
+    
+    slider.addEventListener('input', (e) => {
+        mergeThreshold = parseFloat(e.target.value);
+        thresholdVal.innerText = mergeThreshold.toFixed(2);
+    });
+
+    function updateDynamics() {
+        nodes.forEach(n => {
+            if (!n.W) {
+                n.activation *= 0.92;
+                if (n.activation < 0.1) n.activation = 0;
+            }
+        });
+        
+        let merged = false;
+        for (let i = 0; i < nodes.length; i++) {
+            for (let j = i+1; j < nodes.length; j++) {
+                let n1 = nodes[i], n2 = nodes[j];
+                if (n1.W || n2.W || n1.energy !== n2.energy || n1.energy >= 2) continue;
+                
+                let sim = cosineSimilarity(n1.vec, n2.vec);
+                if (sim > mergeThreshold) {
+                    let newNode = new Node(`(${n1.word}+${n2.word})`, n1.vec.map((v, idx) => (v + n2.vec[idx]) / 2), n1.energy + 1);
+                    
+                    newNode.displayWord = newNode.energy === 1 ? `E1_Concept` : `E2_Meta`;
+
+                    newNode.x = (n1.x + n2.x) / 2;
+                    newNode.y = (n1.y + n2.y) / 2;
+                    newNode.activation = 100;
+                    
+                    n1.W = true; n2.W = true;
+                    
+                    nodes.push(newNode);
+                    log(`🧬 MERGED: ${n1.word} + ${n2.word} (Sim: ${sim.toFixed(2)})`);
+                    merged = true;
+                    break;
+                }
+            }
+            if (merged) break;
+        }
+    }
+
+    function updatePhysics() {
+        for (let i = 0; i < nodes.length; i++) {
+            for (let j = i + 1; j < nodes.length; j++) {
+                let dx = nodes[i].x - nodes[j].x;
+                let dy = nodes[i].y - nodes[j].y;
+                let dist = Math.sqrt(dx*dx + dy*dy) || 1;
+                let force = 3000 / (dist * dist);
+                nodes[i].vx += (dx/dist) * force; nodes[i].vy += (dy/dist) * force;
+                nodes[j].vx -= (dx/dist) * force; nodes[j].vy -= (dy/dist) * force;
+            }
+        }
+        nodes.forEach(n => {
+            n.x += n.vx; n.y += n.vy;
+            n.vx *= 0.85; n.vy *= 0.85;
+            n.x = Math.max(30, Math.min(width - 30, n.x));
+            n.y = Math.max(30, Math.min(height - 30, n.y));
+        });
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, width, height);
+        
+        nodes.forEach(n => {
+            let r = 20 + n.energy * 15;
+            let baseColor;
+            if (n.W) baseColor = [71, 85, 105]; 
+            else if (n.energy === 0) baseColor = [74, 222, 128]; // Зеленый (слова)
+            else if (n.energy === 1) baseColor = [96, 165, 250]; // Синий (концепт)
+            else baseColor = [192, 132, 252]; // Фиолетовый (мета)
+
+            let glow = Math.min(n.activation / 50, 1);
+            let rC = baseColor[0] + (255 - baseColor[0]) * glow;
+            let gC = baseColor[1] + (255 - baseColor[1]) * glow;
+            let bC = baseColor[2] + (255 - baseColor[2]) * glow;
+
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, r + glow * 10, 0, Math.PI * 2);
+            ctx.fillStyle = `rgb(${rC}, ${gC}, ${bC})`;
+            ctx.fill();
+            
+            ctx.strokeStyle = n.W ? '#333' : 'rgba(255,255,255,0.8)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            ctx.fillStyle = n.W ? '#475569' : '#fff';
+            ctx.font = 'bold 14px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(n.displayWord, n.x, n.y + r + 18);
+        });
+    }
+
+    function loop() {
+        updateDynamics();
+        updatePhysics();
+        draw();
+        requestAnimationFrame(loop);
+    }
+
+    (async () => {
+        await initModel();
+        loop();
+    })();
+</script>
+</body>
+</html>
