@@ -35,6 +35,10 @@ Why it matters: Demonstrates that languages are just different shells for the sa
 What it does: Simpler versions of the interactive graphs (with physics and activation waves).
 Why it matters: Kept as the project's development history and for comparison with later, more advanced versions.
 
+6. SemanticChain.html — Semantic Chain (Game)
+What it does: A step-by-step puzzle inspired by "Six Degrees of Separation". The player is given two semantically distant words (e.g., moon and banana) and must connect them by entering intermediate bridge words. Each new word must be semantically close to the previous one (similarity threshold > 0.50), and the final word must be close to the target.
+Why it matters: It demonstrates how a neural network builds non-obvious semantic links between concepts that have nothing to do with each other in real life. The game supports both Russian and English (RU/EN) and uses a multilingual model, allowing players to input words in either language. It's a perfect example of a "black box": the player has to empirically guess which associations the model considers valid.
+
 🛠️ Technologies
 HTML5 / CSS3 / JavaScript (ES6 Modules)
 
