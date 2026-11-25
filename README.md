@@ -41,3 +41,6 @@ HTML5 / CSS3 / JavaScript (ES6 Modules)
 Transformers.js (Hugging Face) — running models (Xenova/all-MiniLM-L6-v2, Xenova/nllb-200-distilled-600M) directly in the browser.
 
 Canvas API — graph visualization and node physics.
+
+#Quick Start:
+https://github.com/mrDarkDuck/Gen-LM/blob/main/HTML5/README.md
