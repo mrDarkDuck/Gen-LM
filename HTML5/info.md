@@ -2,11 +2,11 @@ Direct link, copy and paste to adress/URL bar.
 
 https://mrdarkduck.github.io/Gen-LM/HTML5/AI_translate.html
 
-https://mrdarkduck.github.io/Gen-LM/HTML5/Black Box Puzzle.html
+https://mrdarkduck.github.io/Gen-LM/HTML5/%20Box%20Puzzle.html
 
-https://mrdarkduck.github.io/Gen-LM/HTML5/Feed the Brain.html
+https://mrdarkduck.github.io/Gen-LM/HTML5/Feed%20the%20Brain.html
 
-https://mrdarkduck.github.io/Gen-LM/HTML5/Multilingual Sandbox.html
+https://mrdarkduck.github.io/Gen-LM/HTML5/Multilingual%20Sandbox.html
 
 https://mrdarkduck.github.io/Gen-LM/HTML5/game.html
 
