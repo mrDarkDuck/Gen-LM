@@ -45,3 +45,7 @@ Transformers.js (Hugging Face) — запуск моделей (Xenova/all-MiniL
 Canvas API — визуализация графов и физика узлов.
 
 Быстрый старт по ссылке: https://github.com/mrDarkDuck/Gen-LM/blob/main/HTML5/README.md
+
+## 📐 Теоретическая база
+Математическое описание модели (пространства состояний, операций слияния, инвариантов и асимптотических свойств) вынесено в отдельный файл. 
+👉 **[Читать THEORY_RU.md](THEORY_RU.md)**
