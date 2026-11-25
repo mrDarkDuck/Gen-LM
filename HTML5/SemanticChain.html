@@ -455,10 +455,18 @@
 
     let game = null;
 
-    async function init() {
+        async function init() {
         try {
-            // ИСПОЛЬЗУЕМ МУЛЬТИЯЗЫЧНУЮ МОДЕЛЬ
-            const embedder = await pipeline('feature-extraction', 'Xenova/paraphrase-multilingual-MiniLM-L12-v2', { quantized: true });
+            // Показываем прогресс загрузки в консоли и на экране
+            const embedder = await pipeline('feature-extraction', 'Xenova/paraphrase-multilingual-MiniLM-L12-v2', { 
+                quantized: true,
+                progress_callback: (data) => {
+                    if (data.status === 'progress') {
+                        const percent = Math.round((data.loaded / data.total) * 100);
+                        document.getElementById('uiLoadingText').innerHTML = `Загрузка нейросети: ${percent}%<br><span style="font-size:10px; color:#94a3b8;">(${Math.round(data.loaded/1024/1024)} MB / ${Math.round(data.total/1024/1024)} MB)</span>`;
+                    }
+                }
+            });
             
             game = new SemanticChainGame(embedder);
             window.game = game; 
@@ -475,6 +483,7 @@
             await game.startLevel(0);
         } catch (e) {
             statusEl.textContent = '❌ Ошибка загрузки модели';
+            document.getElementById('uiLoadingText').innerHTML = '❌ Ошибка загрузки. Проверьте интернет.';
             console.error(e);
         }
     }
