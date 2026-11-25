@@ -9,7 +9,11 @@
         
         /* ===== ЛЕВАЯ ПАНЕЛЬ ===== */
         #sidebar { width: 380px; background: var(--panel); padding: 25px; display: flex; flex-direction: column; border-right: 1px solid #334155; box-shadow: 5px 0 20px rgba(0,0,0,0.3); z-index: 10; overflow-y: auto; }
-        h1 { margin: 0 0 5px 0; font-size: 22px; color: var(--accent); font-family: monospace; }
+        .header-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5px; }
+        h1 { margin: 0; font-size: 22px; color: var(--accent); font-family: monospace; }
+        
+        select.lang-select { background: var(--bg); color: #fff; border: 1px solid #475569; padding: 4px 8px; border-radius: 6px; font-family: inherit; font-size: 12px; cursor: pointer; outline: none; }
+        
         .subtitle { font-size: 12px; color: #94a3b8; margin-bottom: 20px; line-height: 1.4; }
         
         .stats { display: flex; gap: 10px; margin-bottom: 20px; }
@@ -40,81 +44,33 @@
         
         #status { font-size: 12px; color: var(--gold); font-family: monospace; padding: 10px; background: var(--bg); border-radius: 6px; text-align: center; margin-top: 15px;}
 
-        /* ===== ПРАВАЯ ПАНЕЛЬ (Игровое поле) ===== */
+        /* ===== ПРАВАЯ ПАНЕЛЬ ===== */
         #board { flex: 1; padding: 40px; overflow: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
         
-        /* Заголовок цели */
         #mission { position: absolute; top: 30px; left: 0; right: 0; text-align: center; }
         #mission h2 { font-size: 22px; margin: 0; }
         #mission h2 span { color: var(--gold); }
         
-        /* Контейнер цепочки */
         #chain-container { display: flex; align-items: center; gap: 15px; flex-wrap: wrap; justify-content: center; padding: 20px; max-width: 90%; }
         
-        /* Узел цепочки */
         .chain-node { 
-            background: var(--panel); 
-            border: 2px solid #475569; 
-            border-radius: 12px; 
-            padding: 15px 20px; 
-            font-weight: bold; 
-            font-size: 16px;
-            animation: pop 0.4s ease-out;
-            position: relative;
-            min-width: 80px;
-            text-align: center;
+            background: var(--panel); border: 2px solid #475569; border-radius: 12px; padding: 15px 20px; 
+            font-weight: bold; font-size: 16px; animation: pop 0.4s ease-out; position: relative; min-width: 80px; text-align: center;
         }
         .chain-node.start { border-color: var(--success); color: var(--success); }
         .chain-node.target { border-color: var(--error); color: var(--error); }
         .chain-node.bridge { border-color: var(--accent); color: var(--accent); }
-        .chain-node.new { animation: glowIn 0.6s ease-out; }
         
         @keyframes pop { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-        @keyframes glowIn { 
-            0% { transform: scale(0); box-shadow: 0 0 0 rgba(96,165,250,0); }
-            50% { transform: scale(1.2); box-shadow: 0 0 30px rgba(96,165,250,0.8); }
-            100% { transform: scale(1); box-shadow: 0 0 0 rgba(96,165,250,0); }
-        }
         
-        /* Связь между узлами */
-        .chain-link { 
-            display: flex; 
-            flex-direction: column; 
-            align-items: center; 
-            gap: 2px;
-            font-size: 11px;
-            color: #64748b;
-        }
-        .chain-link .line { 
-            height: 2px; 
-            width: 40px; 
-            background: #475569; 
-            position: relative;
-        }
-        .chain-link .line::after {
-            content: '>';
-            position: absolute;
-            right: -5px;
-            top: -7px;
-            color: #475569;
-        }
-        .chain-link .sim-badge { 
-            color: var(--gold); 
-            font-weight: bold;
-            font-size: 11px;
-        }
+        .chain-link { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: #64748b; }
+        .chain-link .line { height: 2px; width: 40px; background: #475569; position: relative; }
+        .chain-link .line::after { content: '>'; position: absolute; right: -5px; top: -7px; color: #475569; }
+        .chain-link .sim-badge { color: var(--gold); font-weight: bold; font-size: 11px; }
         
-        /* Экран победы */
         #victory-screen { 
-            position: absolute; 
-            top: 0; left: 0; right: 0; bottom: 0; 
-            background: rgba(15, 23, 42, 0.95);
-            display: none;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            z-index: 100;
-            animation: fadeIn 0.5s ease-out;
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.95);
+            display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 100; animation: fadeIn 0.5s ease-out;
         }
         #victory-screen.show { display: flex; }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -127,8 +83,7 @@
         .victory-stat .lbl { font-size: 12px; color: #94a3b8; text-transform: uppercase; }
         
         #loading-screen { 
-            position: absolute; top: 0; left: 0; right: 0; bottom: 0; 
-            background: var(--bg); display: flex; flex-direction: column;
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: var(--bg); display: flex; flex-direction: column;
             align-items: center; justify-content: center; z-index: 200;
         }
         #loading-screen.hidden { display: none; }
@@ -141,35 +96,40 @@
 <body>
 
     <div id="sidebar">
-        <h1>Semantic Chain</h1>
-        <p class="subtitle">Соедини два далёких слова через семантические мосты. Чем короче цепочка — тем больше очков.</p>
+        <div class="header-row">
+            <h1 id="uiTitle">Semantic Chain</h1>
+            <select class="lang-select" id="langSelect">
+                <option value="ru">RU</option>
+                <option value="en">EN</option>
+            </select>
+        </div>
+        <p class="subtitle" id="uiSubtitle">Соедини два далёких слова через семантические мосты.</p>
         
         <div class="stats">
             <div class="stat-box">
-                <div class="stat-label">Шагов</div>
+                <div class="stat-label" id="uiStepLabel">Шагов</div>
                 <div class="stat-value" id="stepCount">0</div>
             </div>
             <div class="stat-box">
-                <div class="stat-label">Лимит</div>
+                <div class="stat-label" id="uiLimitLabel">Лимит</div>
                 <div class="stat-value" id="stepLimit">5</div>
             </div>
             <div class="stat-box">
-                <div class="stat-label">Очки</div>
+                <div class="stat-label" id="uiScoreLabel">Очки</div>
                 <div class="stat-value" id="scoreCount">0</div>
             </div>
         </div>
         
         <input type="text" id="wordInput" placeholder="Введите слово-мост..." autocomplete="off" disabled>
-        <button id="submitBtn" disabled>Добавить в цепочку</button>
+        <button id="submitBtn" disabled id="uiAddBtn">Добавить в цепочку</button>
         
         <div class="btn-row">
-            <button id="undoBtn" class="btn-secondary" disabled>Отменить</button>
-            <button id="resetBtn" class="btn-warning" disabled>Сброс</button>
+            <button id="undoBtn" class="btn-secondary" disabled id="uiUndoBtn">Отменить</button>
+            <button id="resetBtn" class="btn-warning" disabled id="uiResetBtn">Сброс</button>
         </div>
         
-        <div class="threshold-info">
-            Порог связи: <span id="thresholdDisplay">0.40</span> · 
-            <span id="hint">Слова должны быть близки по смыслу</span>
+        <div class="threshold-info" id="uiThresholdInfo">
+            Порог связи: <b>0.50</b> (Честная игра)
         </div>
         
         <div id="log"></div>
@@ -179,30 +139,29 @@
     <div id="board">
         <div id="loading-screen">
             <div class="spinner"></div>
-            <div>Загрузка нейросети MiniLM (30 МБ)...</div>
-            <div style="font-size: 12px; color: #64748b; margin-top: 10px;">При первом запуске может занять до минуты</div>
+            <div id="uiLoadingText">Загрузка мультиязычной нейросети...</div>
         </div>
         
         <div id="mission">
-            <h2>Соедини <span id="startWordDisplay">?</span> и <span id="targetWordDisplay">?</span></h2>
+            <h2><span id="uiConnectText">Соедини</span> <span id="startWordDisplay">?</span> <span id="uiAndText">и</span> <span id="targetWordDisplay">?</span></h2>
         </div>
         
         <div id="chain-container"></div>
         
         <div id="victory-screen">
-            <div class="victory-title">🏆 ЦЕПОЧКА ЗАМКНУТА!</div>
-            <div class="victory-text">Ты связал несовместимое</div>
+            <div class="victory-title" id="uiVictoryTitle">🏆 ЦЕПОЧКА ЗАМКНУТА!</div>
+            <div class="victory-text" id="uiVictoryText">Ты связал несовместимое</div>
             <div class="victory-stats">
                 <div class="victory-stat">
                     <div class="val" id="victorySteps">0</div>
-                    <div class="lbl">Шагов</div>
+                    <div class="lbl" id="uiVictoryStepsLbl">Шагов</div>
                 </div>
                 <div class="victory-stat">
                     <div class="val" id="victoryScore">0</div>
-                    <div class="lbl">Очков</div>
+                    <div class="lbl" id="uiVictoryScoreLbl">Очков</div>
                 </div>
             </div>
-            <button onclick="game.nextLevel()" style="max-width: 300px;">Следующий уровень →</button>
+            <button onclick="game.nextLevel()" style="max-width: 300px;" id="uiNextLevelBtn">Следующий уровень →</button>
         </div>
     </div>
 
@@ -210,6 +169,68 @@
     import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2';
     env.allowLocalModels = false;
 
+    // ============================================================
+    // ЛОКАЛИЗАЦИЯ (СЛОВАРИ)
+    // ============================================================
+    const TRANSLATIONS = {
+        ru: {
+            title: "Semantic Chain",
+            subtitle: "Соедини два далёких слова через семантические мосты. Чем короче цепочка — тем больше очков.",
+            step: "Шагов", limit: "Лимит", score: "Очки",
+            placeholder: "Введите слово-мост...",
+            addBtn: "Добавить в цепочку", undoBtn: "Отменить", resetBtn: "Сброс",
+            connect: "Соедини", and: "и",
+            threshold: "Порог связи: <b>0.50</b> (Честная игра)",
+            loading: "Загрузка мультиязычной нейросети...",
+            ready: "✅ Готово! Введите слово-мост.",
+            victoryTitle: "🏆 ЦЕПОЧКА ЗАМКНУТА!",
+            victoryText: "Ты связал несовместимое",
+            nextLevel: "Следующий уровень →",
+            logStart: (i, sim) => `Уровень ${i + 1}. Прямое сходство: ${sim}`,
+            logLimit: "Лимит шагов исчерпан. Нажми Сброс.",
+            logExists: (w) => `"${w}" уже в цепочке.`,
+            logTooFar: (w, a, s, t) => `"${w}" далёк от "${a}" (${s} < ${t})`,
+            logJoined: (w, a, s) => `✓ "${w}" присоединён к "${a}" (sim: ${s})`,
+            logUndo: (w) => `Отменено: "${w}"`,
+            logReset: "Уровень сброшен.",
+            logWin: (s) => `🏆 ПОБЕДА! Связь с целью: ${s}`
+        },
+        en: {
+            title: "Semantic Chain",
+            subtitle: "Connect two distant words through semantic bridges. The shorter the chain, the more points.",
+            step: "Steps", limit: "Limit", score: "Score",
+            placeholder: "Enter bridge word...",
+            addBtn: "Add to chain", undoBtn: "Undo", resetBtn: "Reset",
+            connect: "Connect", and: "and",
+            threshold: "Threshold: <b>0.50</b> (Fair play)",
+            loading: "Loading multilingual neural network...",
+            ready: "✅ Ready! Enter a bridge word.",
+            victoryTitle: "🏆 CHAIN CLOSED!",
+            victoryText: "You connected the unconnectable",
+            nextLevel: "Next Level →",
+            logStart: (i, sim) => `Level ${i + 1}. Direct similarity: ${sim}`,
+            logLimit: "Step limit reached. Click Reset.",
+            logExists: (w) => `"${w}" is already in the chain.`,
+            logTooFar: (w, a, s, t) => `"${w}" is too far from "${a}" (${s} < ${t})`,
+            logJoined: (w, a, s) => `✓ "${w}" joined "${a}" (sim: ${s})`,
+            logUndo: (w) => `Undone: "${w}"`,
+            logReset: "Level reset.",
+            logWin: (s) => `🏆 VICTORY! Target similarity: ${s}`
+        }
+    };
+
+    // ============================================================
+    // УРОВНИ (на двух языках)
+    // ============================================================
+    const LEVELS = [
+        { ru: { start: "луна", target: "банан" }, en: { start: "moon", target: "banana" }, limit: 4 },
+        { ru: { start: "океан", target: "огонь" }, en: { start: "ocean", target: "fire" }, limit: 4 },
+        { ru: { start: "библиотека", target: "желудок" }, en: { start: "library", target: "stomach" }, limit: 5 },
+        { ru: { start: "гитара", target: "вулкан" }, en: { start: "guitar", target: "volcano" }, limit: 5 },
+        { ru: { start: "снег", target: "демократия" }, en: { start: "snow", target: "democracy" }, limit: 6 }
+    ];
+
+    // Элементы UI
     const inputEl = document.getElementById('wordInput');
     const submitBtn = document.getElementById('submitBtn');
     const undoBtn = document.getElementById('undoBtn');
@@ -224,37 +245,48 @@
     const targetWordDisplay = document.getElementById('targetWordDisplay');
     const victoryScreen = document.getElementById('victory-screen');
     const loadingScreen = document.getElementById('loading-screen');
-    const thresholdDisplay = document.getElementById('thresholdDisplay');
+    const langSelect = document.getElementById('langSelect');
 
-    // ============================================================
-    // УРОВНИ (пары с низким прямым сходством)
-    // ============================================================
-    const LEVELS = [
-        { start: "moon",    target: "banana",  limit: 4, difficulty: "Легко" },
-        { start: "ocean",   target: "fire",    limit: 4, difficulty: "Средне" },
-        { start: "library", target: "stomach", limit: 5, difficulty: "Сложно" },
-        { start: "guitar",  target: "volcano", limit: 5, difficulty: "Очень сложно" },
-        { start: "snow",    target: "democracy", limit: 6, difficulty: "Экстрим" }
-    ];
+    let currentLang = 'ru';
 
-    // ============================================================
-    // ИГРОВАЯ ЛОГИКА
-    // ============================================================
+    // Функция обновления текста интерфейса
+    function updateUILanguage() {
+        const t = TRANSLATIONS[currentLang];
+        document.getElementById('uiTitle').textContent = t.title;
+        document.getElementById('uiSubtitle').textContent = t.subtitle;
+        document.getElementById('uiStepLabel').textContent = t.step;
+        document.getElementById('uiLimitLabel').textContent = t.limit;
+        document.getElementById('uiScoreLabel').textContent = t.score;
+        inputEl.placeholder = t.placeholder;
+        document.getElementById('uiAddBtn').textContent = t.addBtn;
+        document.getElementById('uiUndoBtn').textContent = t.undoBtn;
+        document.getElementById('uiResetBtn').textContent = t.resetBtn;
+        document.getElementById('uiConnectText').textContent = t.connect;
+        document.getElementById('uiAndText').textContent = t.and;
+        document.getElementById('uiThresholdInfo').innerHTML = t.threshold;
+        document.getElementById('uiLoadingText').textContent = t.loading;
+        document.getElementById('uiVictoryTitle').textContent = t.victoryTitle;
+        document.getElementById('uiVictoryText').textContent = t.victoryText;
+        document.getElementById('uiVictoryStepsLbl').textContent = t.step;
+        document.getElementById('uiVictoryScoreLbl').textContent = t.score;
+        document.getElementById('uiNextLevelBtn').textContent = t.nextLevel;
+        statusEl.textContent = t.ready;
+    }
+
     class SemanticChainGame {
         constructor(embedder) {
             this.embedder = embedder;
-            this.threshold = 0.40;  // Порог для связи двух слов
+            this.threshold = 0.50;
             this.levelIndex = 0;
-            this.chain = [];         // [ {word, vec} ] — промежуточные слова
+            this.chain = [];        
             this.startVec = null;
             this.targetVec = null;
-            this.score = 0;
             this.totalScore = 0;
         }
 
         async startLevel(index) {
             if (index >= LEVELS.length) {
-                alert("🎉 Ты прошёл все уровни! Общий счёт: " + this.totalScore);
+                alert(currentLang === 'ru' ? "🎉 Ты прошёл все уровни! Общий счёт: " + this.totalScore : "🎉 You passed all levels! Total score: " + this.totalScore);
                 this.levelIndex = 0;
                 this.totalScore = 0;
                 index = 0;
@@ -262,23 +294,22 @@
             
             this.levelIndex = index;
             this.chain = [];
-            this.score = 0;
             victoryScreen.classList.remove('show');
 
-            const level = LEVELS[index];
+            const level = LEVELS[index][currentLang]; // Берем слова на нужном языке
+            const limit = LEVELS[index].limit;
             
             this.startVec = await this.getEmbedding(level.start);
             this.targetVec = await this.getEmbedding(level.target);
             
             startWordDisplay.textContent = level.start;
             targetWordDisplay.textContent = level.target;
-            stepLimitEl.textContent = level.limit;
+            stepLimitEl.textContent = limit;
             stepCountEl.textContent = 0;
             scoreCountEl.textContent = 0;
             
-            // Проверяем, что эти слова действительно далеко
             const directSim = cosineSimilarity(this.startVec, this.targetVec);
-            this.log(`Уровень ${index + 1} (${level.difficulty}). Прямое сходство: ${directSim.toFixed(2)}`, 'log-info');
+            this.log(TRANSLATIONS[currentLang].logStart(index, directSim.toFixed(2)), 'log-info');
             
             this.renderChain();
         }
@@ -290,40 +321,37 @@
 
         async addWord(word) {
             word = word.toLowerCase().trim();
-            if (!word) return { ok: false };
+            if (!word) return;
             
-            const level = LEVELS[this.levelIndex];
-            if (this.chain.length >= level.limit) {
-                this.log("Лимит шагов исчерпан. Нажми Reset.", 'log-error');
-                return { ok: false };
+            const level = LEVELS[this.levelIndex][currentLang];
+            const limit = LEVELS[this.levelIndex].limit;
+            const t = TRANSLATIONS[currentLang];
+
+            if (this.chain.length >= limit) {
+                this.log(t.logLimit, 'log-error');
+                return;
             }
             
-            // Проверка: слово уже есть?
             if (this.chain.some(n => n.word === word) || word === level.start || word === level.target) {
-                this.log(`"${word}" уже в цепочке.`, 'log-error');
-                return { ok: false };
+                this.log(t.logExists(word), 'log-error');
+                return;
             }
             
-            // Считаем вектор
             const vec = await this.getEmbedding(word);
             
-            // К чему цепляемся? К старту или к последнему слову?
             const anchorVec = this.chain.length === 0 ? this.startVec : this.chain[this.chain.length - 1].vec;
             const anchorWord = this.chain.length === 0 ? level.start : this.chain[this.chain.length - 1].word;
             
             const simToAnchor = cosineSimilarity(anchorVec, vec);
             
-            // Проверка на слишком далёкую связь
             if (simToAnchor < this.threshold) {
-                this.log(`"${word}" слишком далёк от "${anchorWord}" (sim: ${simToAnchor.toFixed(2)} < ${this.threshold})`, 'log-error');
-                return { ok: false, sim: simToAnchor };
+                this.log(t.logTooFar(word, anchorWord, simToAnchor.toFixed(2), this.threshold), 'log-error');
+                return;
             }
             
-            // Добавляем в цепочку
             this.chain.push({ word, vec, simFromPrev: simToAnchor });
-            this.log(`✓ "${word}" присоединён к "${anchorWord}" (sim: ${simToAnchor.toFixed(2)})`, 'log-success');
+            this.log(t.logJoined(word, anchorWord, simToAnchor.toFixed(2)), 'log-success');
             
-            // Проверяем, дошли ли до цели?
             const simToTarget = cosineSimilarity(vec, this.targetVec);
             
             this.renderChain();
@@ -331,37 +359,31 @@
             
             if (simToTarget >= this.threshold) {
                 this.onVictory(simToTarget);
-                return { ok: true, complete: true };
             }
-            
-            return { ok: true, complete: false, simTarget: simToTarget };
         }
 
         undo() {
             if (this.chain.length === 0) return;
             const removed = this.chain.pop();
-            this.log(`Отменено: "${removed.word}"`, 'log-info');
+            this.log(TRANSLATIONS[currentLang].logUndo(removed.word), 'log-info');
             this.renderChain();
             this.updateStats();
         }
 
         async reset() {
-            this.log("Уровень сброшен.", 'log-info');
+            this.log(TRANSLATIONS[currentLang].logReset, 'log-info');
             await this.startLevel(this.levelIndex);
         }
 
         onVictory(simToTarget) {
-            const level = LEVELS[this.levelIndex];
+            const limit = LEVELS[this.levelIndex].limit;
             const stepsUsed = this.chain.length;
-            const stepsLeft = level.limit - stepsUsed;
+            const stepsLeft = limit - stepsUsed;
             
-            // Формула очков: чем меньше шагов, тем больше очков
-            // Базовая награда 100 + бонус за оставшиеся шаги * 50
             const levelScore = 100 + (stepsLeft * 50);
             this.totalScore += levelScore;
             
-            this.log(`🏆 ПОБЕДА! Связь с целью: ${simToTarget.toFixed(2)}`, 'log-success');
-            this.log(`Бонус: ${levelScore} очков (шагов осталось: ${stepsLeft})`, 'log-info');
+            this.log(TRANSLATIONS[currentLang].logWin(simToTarget.toFixed(2)), 'log-success');
             
             document.getElementById('victorySteps').textContent = stepsUsed;
             document.getElementById('victoryScore').textContent = levelScore;
@@ -369,14 +391,12 @@
         }
 
         renderChain() {
-            const level = LEVELS[this.levelIndex];
+            const level = LEVELS[this.levelIndex][currentLang];
             let html = '';
             
-            // Стартовое слово
             html += `<div class="chain-node start">${level.start}</div>`;
             
-            // Промежуточные звенья
-            this.chain.forEach((node, i) => {
+            this.chain.forEach((node) => {
                 html += `<div class="chain-link">
                             <div class="sim-badge">${node.simFromPrev.toFixed(2)}</div>
                             <div class="line"></div>
@@ -384,7 +404,6 @@
                 html += `<div class="chain-node bridge">${node.word}</div>`;
             });
             
-            // Проверяем финальную связь
             const lastNode = this.chain.length > 0 ? this.chain[this.chain.length - 1] : null;
             if (lastNode) {
                 const simToTarget = cosineSimilarity(lastNode.vec, this.targetVec);
@@ -394,14 +413,12 @@
                             <div class="line" style="background: ${isComplete ? 'var(--success)' : '#475569'};"></div>
                         </div>`;
             } else {
-                // Прямая связь старт->цель
                 html += `<div class="chain-link">
                             <div class="sim-badge">?</div>
                             <div class="line" style="background: #475569;"></div>
                         </div>`;
             }
             
-            // Целевое слово
             html += `<div class="chain-node target">${level.target}</div>`;
             
             chainContainer.innerHTML = html;
@@ -409,7 +426,7 @@
 
         updateStats() {
             stepCountEl.textContent = this.chain.length;
-            scoreCountEl.textContent = this.score;
+            scoreCountEl.textContent = this.totalScore;
         }
 
         nextLevel() {
@@ -436,17 +453,15 @@
         return dot / (Math.sqrt(magA) * Math.sqrt(magB));
     }
 
-    // ============================================================
-    // ИНИЦИАЛИЗАЦИЯ
-    // ============================================================
     let game = null;
 
     async function init() {
         try {
-            const embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { quantized: true });
+            // ИСПОЛЬЗУЕМ МУЛЬТИЯЗЫЧНУЮ МОДЕЛЬ
+            const embedder = await pipeline('feature-extraction', 'Xenova/paraphrase-multilingual-MiniLM-L12-v2', { quantized: true });
             
             game = new SemanticChainGame(embedder);
-            window.game = game; // для кнопки nextLevel
+            window.game = game; 
             
             loadingScreen.classList.add('hidden');
             statusEl.textContent = '✅ Готово! Введите слово-мост.';
@@ -463,6 +478,15 @@
             console.error(e);
         }
     }
+
+    // Обработка переключения языка
+    langSelect.addEventListener('change', async (e) => {
+        currentLang = e.target.value;
+        updateUILanguage();
+        if (game) {
+            await game.startLevel(0); // Сбрасываем на первый уровень
+        }
+    });
 
     submitBtn.addEventListener('click', async () => {
         if (!game) return;
@@ -484,16 +508,11 @@
         if (e.key === 'Enter') submitBtn.click();
     });
 
-    undoBtn.addEventListener('click', () => {
-        if (!game) return;
-        game.undo();
-    });
+    undoBtn.addEventListener('click', () => { if (game) game.undo(); });
+    resetBtn.addEventListener('click', async () => { if (game) await game.reset(); });
 
-    resetBtn.addEventListener('click', async () => {
-        if (!game) return;
-        await game.reset();
-    });
-
+    // Инициализация языка по умолчанию
+    updateUILanguage();
     init();
 </script>
 </body>
