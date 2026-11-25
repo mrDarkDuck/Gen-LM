@@ -250,7 +250,7 @@
     let currentLang = 'ru';
 
     // Функция обновления текста интерфейса
-    function updateUILanguage() {
+        function updateUILanguage() {
         const t = TRANSLATIONS[currentLang];
         document.getElementById('uiTitle').textContent = t.title;
         document.getElementById('uiSubtitle').textContent = t.subtitle;
@@ -258,9 +258,12 @@
         document.getElementById('uiLimitLabel').textContent = t.limit;
         document.getElementById('uiScoreLabel').textContent = t.score;
         inputEl.placeholder = t.placeholder;
-        document.getElementById('uiAddBtn').textContent = t.addBtn;
-        document.getElementById('uiUndoBtn').textContent = t.undoBtn;
-        document.getElementById('uiResetBtn').textContent = t.resetBtn;
+        
+        // ИСПРАВЛЕНИЕ: Используем правильные ID кнопок, которые есть в HTML
+        document.getElementById('submitBtn').textContent = t.addBtn;
+        document.getElementById('undoBtn').textContent = t.undoBtn;
+        document.getElementById('resetBtn').textContent = t.resetBtn;
+        
         document.getElementById('uiConnectText').textContent = t.connect;
         document.getElementById('uiAndText').textContent = t.and;
         document.getElementById('uiThresholdInfo').innerHTML = t.threshold;
@@ -270,7 +273,11 @@
         document.getElementById('uiVictoryStepsLbl').textContent = t.step;
         document.getElementById('uiVictoryScoreLbl').textContent = t.score;
         document.getElementById('uiNextLevelBtn').textContent = t.nextLevel;
-        statusEl.textContent = t.ready;
+        
+        // Статус обновляем только если модель еще не загрузилась
+        if (!statusEl.textContent.includes('✅')) {
+            statusEl.textContent = 'Загрузка...';
+        }
     }
 
     class SemanticChainGame {
