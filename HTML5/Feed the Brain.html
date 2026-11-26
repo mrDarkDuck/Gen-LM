@@ -20,7 +20,7 @@
         .btn-conflict:hover { background: #d97706; }
         
         #log { margin-top: 15px; font-size: 12px; color: #94a3b8; flex: 1; overflow-y: auto; border-top: 1px solid #334155; padding-top: 10px;}
-        #status { font-size: 11px; color: #fbbf24; margin-bottom: 10px; min-height: 15px;}
+        #status { font-size: 11px; color: #fbbf24; margin-bottom: 10px; min-height: 15px; line-height: 1.4;}
         
         .slider-container { margin: 10px 0; font-size: 12px; color: #cbd5e1; }
         input[type="range"] { width: 100%; margin-top: 5px; cursor: pointer; }
@@ -33,7 +33,7 @@
 <body>
     <div id="ui">
         <h3>Feed the Brain</h3>
-        <div id="status">Loading embedding model...</div>
+        <div id="status">Загрузка модели MiniLM (120 МБ)...</div>
         
         <input type="text" id="wordInput" placeholder="Enter text (e.g. 'tokio')" autocomplete="off" disabled>
         <button id="feedBtn" disabled>Add Node (Embed)</button>
@@ -77,7 +77,6 @@
     let isProcessing = false;
 
     function resize() {
-        // Берем размеры именно холста, а не всего окна
         width = canvas.clientWidth;
         height = canvas.clientHeight;
         canvas.width = width;
@@ -96,15 +95,24 @@
 
     async function initModel() {
         try {
-            extractor = await pipeline('feature-extraction', 'Xenova/paraphrase-multilingual-MiniLM-L12-v2', { quantized: true });
+            extractor = await pipeline('feature-extraction', 'Xenova/paraphrase-multilingual-MiniLM-L12-v2', { 
+                quantized: true,
+                progress_callback: (data) => {
+                    if (data.status === 'progress') {
+                        const percent = Math.round((data.loaded / data.total) * 100);
+                        statusEl.innerHTML = `Загрузка модели: <b style="color:#60a5fa">${percent}%</b><br><span style="font-size:10px">${(data.loaded/1024/1024).toFixed(1)} MB / ${(data.total/1024/1024).toFixed(1)} MB</span>`;
+                    }
+                }
+            });
             statusEl.innerText = "✅ Model loaded. Ready.";
+            statusEl.style.color = "#4ade80";
             inputEl.disabled = false;
             feedBtn.disabled = false;
             slider.disabled = false;
             conflictBtn.disabled = false;
             log("Embedding model loaded.");
         } catch (e) {
-            statusEl.innerText = "❌ Error loading model.";
+            statusEl.innerText = "❌ Ошибка загрузки. Проверьте интернет (F12).";
             console.error(e);
         }
     }
@@ -137,7 +145,6 @@
             this.W = 0; // 0 = active, 1 = frozen (merged), -1 = archived (shattered)
             this.parents = []; 
             this.edges = [];
-            // Спавним в центре ПРАВОЙ части экрана
             this.x = width/2 + (Math.random()-0.5)*200;
             this.y = height/2 + (Math.random()-0.5)*200;
             this.vx = 0; this.vy = 0;
@@ -183,15 +190,20 @@
                     }
                 });
 
-                // Требуем сходство не ниже 0.40, чтобы не было случайных связей
+                // Требуем сходство не ниже 0.40
                 if (bestMatch && maxSim > 0.40) { 
                     node.edges.push({ target: bestMatch, weight: 1 });
                     bestMatch.edges.push({ target: node, weight: 1 });
                     log(`🔗 Linked "${text}" to "${bestMatch.text}" (Sim: ${maxSim.toFixed(2)})`, "#60a5fa");
                 }
+            }
+        } else {
+            log(`Node "${text}" already active.`);
+        }
         
         inputEl.value = '';
         statusEl.innerText = "✅ Ready.";
+        statusEl.style.color = "#4ade80";
         feedBtn.disabled = false;
         isProcessing = false;
     }
@@ -284,20 +296,23 @@
                     let newVec = normalizeVec(sumVec);
                     
                     let newNode = new Node(`(${n1.text}+${n2.text})`, newVec, n1.energy + 1);
-                    newNode.displayWord = newNode.energy === 1 ? `E1_Concept` : (newNode.energy === 2 ? `E2_Meta` : `E3_Abstract`);
+                    
+                    // Даем концепту читаемое имя
+                    let namePart = `${n1.text.substring(0,3)}.${n2.text.substring(0,3)}`;
+                    newNode.displayWord = `E${newNode.energy}: ${namePart}`;
+                    
                     newNode.x = (n1.x + n2.x) / 2;
                     newNode.y = (n1.y + n2.y) / 2;
                     newNode.parents = [n1, n2];
 
                     n1.W = 1; n2.W = 1;
                     
-                    // ИСПРАВЛЕНИЕ: Привязываем новый концепт к родителям, чтобы они не улетали
+                    // Привязываем концепт к родителям
                     newNode.edges.push({ target: n1, weight: 2 });
                     newNode.edges.push({ target: n2, weight: 2 });
                     n1.edges.push({ target: newNode, weight: 2 });
                     n2.edges.push({ target: newNode, weight: 2 });
 
-                    // Забираем связи от родителей
                     let allEdges = [...n1.edges, ...n2.edges];
                     allEdges.forEach(e => {
                         if (e.target.W === 0 && e.target !== n1 && e.target !== n2 && e.target !== newNode) {
@@ -322,7 +337,6 @@
     }
 
     function updatePhysics() {
-        // Отталкивание
         for (let i = 0; i < nodes.length; i++) {
             for (let j = i + 1; j < nodes.length; j++) {
                 let dx = nodes[i].x - nodes[j].x;
@@ -333,23 +347,20 @@
                 nodes[j].vx -= (dx/dist) * force; nodes[j].vy -= (dy/dist) * force;
             }
         }
-        // Притяжение по связям
         nodes.forEach(n => {
             n.edges.forEach(e => {
                 let dx = e.target.x - n.x;
                 let dy = e.target.y - n.y;
                 let dist = Math.sqrt(dx*dx + dy*dy) || 1;
-                let force = (dist - 120) * 0.03; // Чуть сильнее притяжение
+                let force = (dist - 120) * 0.03;
                 n.vx += (dx/dist) * force; n.vy += (dy/dist) * force;
                 e.target.vx -= (dx/dist) * force; e.target.vy -= (dy/dist) * force;
             });
         });
         
-        // Ограничение границами холста
         nodes.forEach(n => {
             n.x += n.vx; n.y += n.vy;
             n.vx *= 0.85; n.vy *= 0.85;
-            // Учитываем радиус самого узла, чтобы он не наполовину улетал за экран
             let r = 15 + n.energy * 10;
             n.x = Math.max(r + 10, Math.min(width - r - 10, n.x));
             n.y = Math.max(r + 10, Math.min(height - r - 10, n.y));
@@ -359,21 +370,22 @@
     function draw() {
         ctx.clearRect(0, 0, width, height);
         
-                nodes.forEach(n => {
+        // Рисуем связи
+        nodes.forEach(n => {
             n.edges.forEach(e => {
                 ctx.beginPath();
                 ctx.moveTo(n.x, n.y);
                 ctx.lineTo(e.target.x, e.target.y);
                 
-                // Если это связь между концептом и его родителем (или наоборот)
+                // Фиолетовые связи от концептов к родителям
                 if ((n.energy > 0 && e.target.energy === 0) || (n.energy === 0 && e.target.energy > 0)) {
-                    ctx.strokeStyle = `rgba(192, 132, 252, 0.8)`; // Фиолетовая жирная линия
+                    ctx.strokeStyle = `rgba(192, 132, 252, 0.8)`;
                     ctx.lineWidth = e.weight + 1;
                 } else if (n.W === 1 || e.target.W === 1) {
-                    ctx.strokeStyle = `rgba(100, 116, 139, 0.15)`; // Серая тусклая линия
+                    ctx.strokeStyle = `rgba(100, 116, 139, 0.15)`;
                     ctx.lineWidth = e.weight;
                 } else {
-                    ctx.strokeStyle = `rgba(96, 165, 250, 0.4)`; // Синяя линия
+                    ctx.strokeStyle = `rgba(96, 165, 250, 0.4)`;
                     ctx.lineWidth = e.weight;
                 }
                 ctx.stroke();
@@ -401,7 +413,6 @@
             ctx.lineWidth = 2;
             ctx.stroke();
 
-            // Текст внутри узла
             ctx.fillStyle = n.W === 0 ? '#fff' : '#64748b';
             ctx.font = 'bold 12px monospace';
             ctx.textAlign = 'center';
