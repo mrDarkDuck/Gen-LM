@@ -85,11 +85,11 @@ $$
 w_u = w_v = 0 \quad \wedge \quad e_u = e_v \quad \wedge \quad \sigma(x_u, x_v) \geq \theta_{\text{merge}}
 $$
 
-Then a new node $w$ is born:
+Then a new node $w$ is born. To prevent vector norm decay during repeated averaging, an L2-normalized centroid is applied:
 
 $$
 \begin{cases}
-x_w = \dfrac{x_u + x_v}{2} \\
+x_w = \dfrac{x_u + x_v}{\|x_u + x_v\|} \ \ (\text{L2-normalized centroid}) \\
 e_w = e_u + 1 \\
 \ell_w = \max(\ell_u, \ell_v) \\
 w_w = 0
@@ -124,11 +124,11 @@ $$
 x_u \neq x_v \quad \wedge \quad \text{chg}(u) > 0 \quad \wedge \quad \text{chg}(v) > 0 \quad \wedge \quad (u, v) \notin \text{CW}
 $$
 
-($\text{CW}$ is the set of previously conflicted pairs), then a node $z$ is born:
+($\text{CW}$ is the set of previously conflicted pairs), then a node $z$ is born. To model semantic conflict in continuous space, a vector difference is used:
 
 $$
 \begin{cases}
-x_z = x_u \oplus x_v \ \ (\text{component-wise XOR for bits}) \\
+x_z = \dfrac{x_u - x_v}{\|x_u - x_v\|} \ \ (\text{vector of semantic difference}) \\
 e_z = 0 \\
 \ell_z = \max(\ell_u, \ell_v) \\
 w_z = 0 \\
@@ -138,19 +138,17 @@ $$
 
 ### 3.3 Shatter / Descent
 
-If $w_v = 1$ and $e_v > 0$, the shatter operation applies:
+If $w_v = 1$ and $e_v > 0$, the shatter operation does not create new vectors (since averaging is irreversible). Instead, it **unfreezes** the original parents and deactivates the node itself:
 
 $$
-\text{Sh}(v) \to (v_1, v_2)
+\text{Sh}(v) \to \text{Unfreeze}(u, v^*) \quad \text{and} \quad w_v \leftarrow 1 \ \text{(node v is archived)}
 $$
 
-where:
-
 $$
-e_{v_1} = e_{v_2} = e_v - 1, \quad w_{v_i} = 0, \quad x_{v_1}, x_{v_2} \text{ — split of } x_v
+w_{u} \leftarrow 0, \quad w_{v^*} \leftarrow 0
 $$
 
-This operation ensures **reversibility** (connection to the Collatz conjecture: $n/2$ as a compression analog).
+where $u, v^*$ are the parents of node $v$. This operation ensures **reversibility** (connection to the Collatz conjecture: analog of $n/2$), returning the system to the previous energy level without losing semantic information.
 
 ---
 
@@ -159,17 +157,21 @@ This operation ensures **reversibility** (connection to the Collatz conjecture: 
 **I1. DAG property.** $\nexists$ cycles in $E_t$.  
 Corollary: the reachability relation is a partial order.
 
-**I2. Growth monotonicity.** For any transition $\mathcal{S}_t \to \mathcal{S}_{t+1}$:
+**I2. Growth monotonicity (conditional).** For transitions $\mathcal{S}_t \to \mathcal{S}_{t+1}$ caused by **Merge** or **Spawn** operations:
 
 $$
 |V_{t+1}| \geq |V_t| \quad \wedge \quad \sum_{v} e_v(t+1) \geq \sum_{v} e_v(t)
 $$
 
-**I3. Energy monotonicity along edges.** For all $(u, v) \in E_t$:
+*(Note: the **Shatter** operation is inverse and may temporarily decrease this metric, ensuring the reversibility of dynamics).*
+
+**I3. Energy monotonicity along merge-edges.** For all edges $(u, v) \in E_t$ created as a result of a **Merge**:
 
 $$
 e_u \leq e_v
 $$
+
+*(Edges created during **Spawn** go from level $e>0$ to level $e=0$, which is an exception that creates "fresh blood" in the system).*
 
 **I4. Flag $W$.** If $w_v = 1$, then $v$ no longer participates in merges:
 
@@ -215,9 +217,9 @@ This is the **arrow of time**: integration (merge) is irreversible without shatt
 
 | Our Model | Mathematical Analog |
 |---|---|
-| $V_t$ with $\sigma$ | metric space with cosine metric |
-| $(V_t, E_t)$ DAG | partially ordered set (poset) |
-| Merge | operation $\otimes$ in a **tensor category** |
-| Level $e$ | **gradation** (graded structure) |
-| Slowing $M_k$ | **branching process** in a critical regime |
-| Shatter $\text{Sh}$ | gradient inversion (analog of $n/2$ in Collatz) |
+| $V_t$ with $\sigma$ | Spherical space with **cosine distance** $d(u,v) = 1 - \sigma(u,v)$ |
+| $(V_t, E_t)$ DAG | Partially ordered set (poset) |
+| Merge | Partial **magma** with gradation and threshold |
+| Level $e$ | **Gradation** (graded structure) |
+| Slowing $M_k$ | **Branching process** in a critical regime |
+| Shatter $\text{Sh}$ | Gradient inversion (analog of $n/2$ in Collatz) |
