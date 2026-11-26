@@ -2,18 +2,25 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Dynamic Baby LLM Graph (Concepts)</title>
+    <title>Dynamic Baby LLM Graph (Real Embeddings)</title>
     <style>
         body { margin: 0; background: #0f172a; color: #fff; font-family: monospace; overflow: hidden; }
-        #ui { position: absolute; top: 20px; left: 20px; z-index: 10; background: rgba(15, 23, 42, 0.9); padding: 20px; border-radius: 12px; border: 1px solid #334155; box-shadow: 0 10px 25px rgba(0,0,0,0.5); width: 340px;}
+        #ui { position: absolute; top: 20px; left: 20px; z-index: 10; background: rgba(15, 23, 42, 0.95); padding: 20px; border-radius: 12px; border: 1px solid #334155; box-shadow: 0 10px 25px rgba(0,0,0,0.5); width: 350px;}
+        h3 { margin-top: 0; color: #60a5fa; }
         input[type="text"] { width: 100%; padding: 10px; background: #1e293b; border: 1px solid #475569; color: #fff; font-family: monospace; border-radius: 6px; box-sizing: border-box; margin-bottom: 10px;}
-        button { width: 100%; padding: 10px; background: #3b82f6; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s;}
+        button { width: 100%; padding: 10px; background: #3b82f6; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; margin-bottom: 8px;}
         button:hover { background: #2563eb; }
         button:disabled { background: #475569; cursor: not-allowed; }
+        
+        .btn-row { display: flex; gap: 8px; }
+        .btn-row button { flex: 1; }
+        .btn-conflict { background: #f59e0b; color: #000; }
+        .btn-conflict:hover { background: #d97706; }
+        
         #log { margin-top: 15px; font-size: 12px; color: #94a3b8; height: 150px; overflow-y: auto; border-top: 1px solid #334155; padding-top: 10px;}
         #status { font-size: 11px; color: #fbbf24; margin-bottom: 10px; min-height: 15px;}
         
-        .slider-container { margin: 15px 0; font-size: 12px; color: #cbd5e1; }
+        .slider-container { margin: 10px 0; font-size: 12px; color: #cbd5e1; }
         input[type="range"] { width: 100%; margin-top: 5px; cursor: pointer; }
         .slider-val { color: #60a5fa; font-weight: bold; float: right;}
         canvas { display: block; }
@@ -21,16 +28,26 @@
 </head>
 <body>
     <div id="ui">
-        <h3 style="margin-top:0;">Feed the Brain</h3>
+        <h3>Feed the Brain</h3>
         <div id="status">Loading embedding model...</div>
-        <input type="text" id="wordInput" placeholder="Enter text (e.g. 'tokio is a city')" autocomplete="off" disabled>
-        <button id="feedBtn" disabled>Learn & Trigger</button>
         
+        <input type="text" id="wordInput" placeholder="Enter text (e.g. 'tokio')" autocomplete="off" disabled>
+        <button id="feedBtn" disabled>Add Node (Embed)</button>
+        
+        <div class="btn-row">
+            <button id="shatterBtn" disabled style="background:#475569;">Shatter Target</button>
+            <button id="conflictBtn" disabled class="btn-conflict">Spawn Conflict</button>
+        </div>
+
         <div class="slider-container">
             Merge Threshold <span id="thresholdVal" class="slider-val">0.70</span>
             <input type="range" id="thresholdSlider" min="0.4" max="0.95" step="0.01" value="0.70" disabled>
         </div>
-        <div id="log"><div>[System] Neural network initialized...</div></div>
+
+        <div id="log">
+            <div>[System] Neural network initialized...</div>
+            <div style="color:#f59e0b">Click frozen (gray) nodes to SHATTER them.</div>
+        </div>
     </div>
     <canvas id="canvas"></canvas>
 
@@ -44,16 +61,18 @@
     const statusEl = document.getElementById('status');
     const inputEl = document.getElementById('wordInput');
     const feedBtn = document.getElementById('feedBtn');
+    const shatterBtn = document.getElementById('shatterBtn');
+    const conflictBtn = document.getElementById('conflictBtn');
     const slider = document.getElementById('thresholdSlider');
     const thresholdVal = document.getElementById('thresholdVal');
+    
     let mergeThreshold = 0.70;
-
     let width, height;
     let nodes = [];
     let nextId = 0;
     let extractor = null;
     let isProcessing = false;
-    let conceptCounter = 1; // Счетчик для красивых имен концептов
+    let selectedForShatter = null;
 
     function resize() {
         width = window.innerWidth;
@@ -64,25 +83,34 @@
     window.addEventListener('resize', resize);
     resize();
 
-    function log(msg) {
+    function log(msg, color = "") {
         let div = document.createElement('div');
         div.innerText = "> " + msg;
+        if (color) div.style.color = color;
         logEl.appendChild(div);
         logEl.scrollTop = logEl.scrollHeight;
     }
 
     async function initModel() {
         try {
-            log("Downloading MiniLM model...");
             extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { quantized: true });
-            statusEl.innerText = "✅ Model loaded.";
+            statusEl.innerText = "✅ Model loaded. Ready.";
             inputEl.disabled = false;
             feedBtn.disabled = false;
             slider.disabled = false;
+            log("Embedding model loaded.");
         } catch (e) {
             statusEl.innerText = "❌ Error loading model.";
             console.error(e);
         }
+    }
+
+    // --- L2-НОРМАЛИЗАЦИЯ ВЕКТОРА (Исправление 1) ---
+    function normalizeVec(vec) {
+        let sumSq = 0;
+        for (let v of vec) sumSq += v * v;
+        const norm = Math.sqrt(sumSq) || 1;
+        return vec.map(v => v / norm);
     }
 
     function cosineSimilarity(vecA, vecB) {
@@ -97,17 +125,17 @@
     }
 
     class Node {
-        constructor(word, vec, energy=0) {
+        constructor(text, vec, energy=0) {
             this.id = nextId++;
-            this.word = word; // Оригинальное имя (может быть длинным)
-            this.displayWord = word; // Имя для отображения
+            this.text = text;
+            this.displayWord = text.length > 18 ? text.substring(0, 16) + "..." : text;
             this.vec = vec;
             this.energy = energy;
-            this.activation = 0;
-            this.W = false;
+            this.W = 0; // 0 = active, 1 = frozen (merged), -1 = archived (shattered)
+            this.parents = []; // Ссылки на родителей для Shatter
             this.edges = [];
-            this.x = width/2 + (Math.random()-0.5)*400;
-            this.y = height/2 + (Math.random()-0.5)*400;
+            this.x = width/2 + (Math.random()-0.5)*200;
+            this.y = height/2 + (Math.random()-0.5)*200;
             this.vx = 0; this.vy = 0;
         }
     }
@@ -120,114 +148,160 @@
         } catch (e) { return null; }
     }
 
-    async function addWord(word) {
-        let existing = nodes.find(n => n.word === word && !n.W);
-        if (!existing) {
-            let vec = await getEmbedding(word);
-            if (!vec) return null;
-            existing = new Node(word, vec);
-            nodes.push(existing);
-            log(`✨ Embedded: "${word}"`);
+    // --- СПАВН ЧЕРЕЗ КОНФЛИКТ (Исправление 2) ---
+    async function spawnConflict() {
+        // Ищем два активных узла с низким сходством
+        let activeNodes = nodes.filter(n => n.W === 0);
+        if (activeNodes.length < 2) {
+            log("Need at least 2 active nodes for conflict.", "#f87171");
+            return;
         }
-        return existing;
+
+        let u = activeNodes[0], v = activeNodes[1];
+        let minSim = 1.0;
+        
+        // Ищем максимально далекую пару
+        for (let i = 0; i < activeNodes.length; i++) {
+            for (let j = i+1; j < activeNodes.length; j++) {
+                let sim = cosineSimilarity(activeNodes[i].vec, activeNodes[j].vec);
+                if (sim < minSim) {
+                    minSim = sim;
+                    u = activeNodes[i];
+                    v = activeNodes[j];
+                }
+            }
+        }
+
+        if (minSim > 0.5) {
+            log("No strong conflicts found (all nodes are too similar).", "#f87171");
+            return;
+        }
+
+        // Создаем разностный вектор x_z = (x_u - x_v) / ||x_u - x_v||
+        let diffVec = u.vec.map((val, idx) => val - v.vec[idx]);
+        let newVec = normalizeVec(diffVec);
+
+        let newNode = new Node(`Conflict`, newVec, 0);
+        newNode.x = (u.x + v.x) / 2;
+        newNode.y = (u.y + v.y) / 2;
+        newNode.parents = [u, v];
+        
+        // Добавляем связи
+        newNode.edges.push({ target: u, weight: 1 });
+        newNode.edges.push({ target: v, weight: 1 });
+        u.edges.push({ target: newNode, weight: 1 });
+        v.edges.push({ target: newNode, weight: 1 });
+
+        nodes.push(newNode);
+        log(`⚡ SPAWNED CONFLICT: (${u.text} - ${v.text})`, "#f59e0b");
     }
 
-    async function addEdge(w1, w2) {
-        let n1 = await addWord(w1);
-        let n2 = await addWord(w2);
-        if (!n1 || !n2) return;
-        let existing = n1.edges.find(e => e.target.id === n2.id);
-        if (existing) { existing.weight += 0.5; }
-        else { 
-            n1.edges.push({target: n2, weight: 1}); 
-            n2.edges.push({target: n1, weight: 1}); 
+    // --- РАСПАД (SHATTER) (Исправление 3) ---
+    function shatterNode(n) {
+        if (n.W !== 1) return; // Только замороженные узлы можно распаковать
+        
+        n.W = -1; // Архивируем узел (он остается на экране, но деактивируется)
+        log(`💥 SHATTERED: ${n.text}`, "#c084fc");
+        
+        // Размораживаем родителей
+        if (n.parents && n.parents.length > 0) {
+            n.parents.forEach(p => {
+                if (p.W === 1) p.W = 0;
+                log(`↩️ Unfroze parent: ${p.text}`, "#4ade80");
+            });
         }
     }
 
     async function feedText() {
         if (isProcessing || !extractor) return;
-        let input = inputEl.value.toLowerCase().trim();
-        if (!input) return;
+        let text = inputEl.value.toLowerCase().trim();
+        if (!text) return;
+        
         isProcessing = true;
         feedBtn.disabled = true;
-        statusEl.innerText = "Computing embeddings...";
+        statusEl.innerText = "Computing...";
         
-        try {
-            let words = input.split(/\s+/);
-            for (let i = 0; i < words.length; i++) {
-                for (let j = i+1; j < Math.min(i+3, words.length); j++) {
-                    await addEdge(words[i], words[j]);
-                }
+        let existing = nodes.find(n => n.text === text && n.W === 0);
+        if (!existing) {
+            let vec = await getEmbedding(text);
+            if (vec) {
+                let node = new Node(text, vec);
+                nodes.push(node);
+                log(`✨ Embedded: "${text}"`);
             }
-            let targetWord = words.find(w => w.length > 2) || words[0]; 
-            let targetNode = nodes.find(n => n.word === targetWord && !n.W);
-            if (targetNode) targetNode.activation = 100;
-            inputEl.value = '';
-        } catch (e) { console.error(e); } 
-        finally {
-            isProcessing = false;
-            statusEl.innerText = "✅ Ready.";
-            feedBtn.disabled = false;
+        } else {
+            log(`Node "${text}" already active.`);
         }
+        
+        inputEl.value = '';
+        statusEl.innerText = "✅ Ready.";
+        feedBtn.disabled = false;
+        isProcessing = false;
     }
 
     feedBtn.addEventListener('click', feedText);
     inputEl.addEventListener('keypress', (e) => { if (e.key === 'Enter') feedText(); });
+    conflictBtn.addEventListener('click', spawnConflict);
+    
+    // Клик по холсту (для Shatter)
+    canvas.addEventListener('mousedown', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        let mx = e.clientX - rect.left;
+        let my = e.clientY - rect.top;
+        
+        for (let i = nodes.length - 1; i >= 0; i--) {
+            let n = nodes[i];
+            let r = 15 + n.energy * 10;
+            if (Math.hypot(mx - n.x, my - n.y) < r) {
+                if (n.W === 1) shatterNode(n);
+                break;
+            }
+        }
+    });
+
     slider.addEventListener('input', (e) => {
         mergeThreshold = parseFloat(e.target.value);
         thresholdVal.innerText = mergeThreshold.toFixed(2);
     });
 
     function updateDynamics() {
-        nodes.forEach(n => {
-            if (!n.W) {
-                n.activation *= 0.92;
-                if (n.activation < 0.1) n.activation = 0;
-            }
-        });
-        nodes.forEach(n => {
-            if (n.activation > 10 && !n.W) {
-                let degree = Math.max(1, n.edges.length);
-                n.edges.forEach(e => {
-                    let transfer = n.activation * 0.15 * (e.weight / degree);
-                    e.target.activation += transfer;
-                });
-                n.activation *= 0.8; 
-            }
-        });
-
         let merged = false;
         for (let i = 0; i < nodes.length; i++) {
             for (let j = i+1; j < nodes.length; j++) {
                 let n1 = nodes[i], n2 = nodes[j];
-                // Не даем сливаться бесконечно (макс энергия 3)
-                if (n1.W || n2.W || n1.energy !== n2.energy || n1.energy >= 3) continue;
+                // Слияние только активных узлов (W === 0) и с одинаковой энергией
+                if (n1.W !== 0 || n2.W !== 0 || n1.energy !== n2.energy || n1.energy >= 3) continue;
                 
                 let sim = cosineSimilarity(n1.vec, n2.vec);
                 if (sim > mergeThreshold) {
-                    let newNode = new Node(`(${n1.word}+${n2.word})`, n1.vec.map((v, idx) => (v + n2.vec[idx]) / 2), n1.energy + 1);
+                    // L2-нормализация (Исправление 1)
+                    let sumVec = n1.vec.map((v, idx) => v + n2.vec[idx]);
+                    let newVec = normalizeVec(sumVec);
                     
-                    // --- УМНЫЕ ПОДПИСИ ---
-                    if (newNode.energy === 1) {
-                        newNode.displayWord = `E1_Concept`; // Просто "Концепт"
-                    } else if (newNode.energy === 2) {
-                        newNode.displayWord = `E2_Meta`;
-                    } else {
-                        newNode.displayWord = `E3_Abstract`;
-                    }
-
+                    let newNode = new Node(`(${n1.text}+${n2.text})`, newVec, n1.energy + 1);
+                    newNode.displayWord = newNode.energy === 1 ? `E1_Concept` : (newNode.energy === 2 ? `E2_Meta` : `E3_Abstract`);
                     newNode.x = (n1.x + n2.x) / 2;
                     newNode.y = (n1.y + n2.y) / 2;
-                    n1.W = true; n2.W = true;
+                    newNode.parents = [n1, n2];
+
+                    n1.W = 1; n2.W = 1;
                     
-                    [...n1.edges, ...n2.edges].forEach(e => {
-                        if (!e.target.W && e.target !== n1 && e.target !== n2) {
-                            newNode.edges.push({target: e.target, weight: e.weight});
-                            e.target.edges.push({target: newNode, weight: e.weight});
+                    // Устранение дублирования рёбер (Исправление 2)
+                    let allEdges = [...n1.edges, ...n2.edges];
+                    allEdges.forEach(e => {
+                        if (e.target.W === 0 && e.target !== n1 && e.target !== n2) {
+                            const existing = newNode.edges.find(ex => ex.target.id === e.target.id);
+                            if (existing) {
+                                existing.weight += e.weight; // Суммируем вес
+                            } else {
+                                newNode.edges.push({ target: e.target, weight: e.weight });
+                                e.target.edges.push({ target: newNode, weight: e.weight });
+                            }
                         }
                     });
+                    
                     nodes.push(newNode);
-                    log(`🧬 MERGED: ${n1.word} + ${n2.word} -> ${newNode.displayWord} (Sim: ${sim.toFixed(2)})`);
+                    log(`🧬 MERGED: ${n1.text} + ${n2.text} (Sim: ${sim.toFixed(2)})`);
                     merged = true;
                     break;
                 }
@@ -267,47 +341,41 @@
 
     function draw() {
         ctx.clearRect(0, 0, width, height);
+        
+        // Рисуем ребра
         nodes.forEach(n => {
             n.edges.forEach(e => {
                 ctx.beginPath();
                 ctx.moveTo(n.x, n.y);
                 ctx.lineTo(e.target.x, e.target.y);
-                let glow = Math.min(n.activation, e.target.activation) / 100;
-                ctx.strokeStyle = `rgba(96, 165, 250, ${0.1 + glow * 0.8})`;
-                ctx.lineWidth = 1 + glow * 3;
+                ctx.strokeStyle = `rgba(96, 165, 250, 0.2)`;
+                ctx.lineWidth = e.weight;
                 ctx.stroke();
             });
         });
 
+        // Рисуем узлы
         nodes.forEach(n => {
-            let r = 15 + n.energy * 12;
-            
-            // Цвета по слоям
+            let r = 15 + n.energy * 10;
             let baseColor;
-            if (n.W) baseColor = [71, 85, 105]; // Серый (мертвый)
-            else if (n.energy === 0) baseColor = [74, 222, 128]; // Зеленый (база)
-            else if (n.energy === 1) baseColor = [96, 165, 250]; // Синий (E1)
-            else if (n.energy === 2) baseColor = [167, 139, 250]; // Фиолетовый (E2)
-            else baseColor = [251, 191, 36]; // Золотой (E3)
-
-            let glow = Math.min(n.activation / 50, 1);
-            let rC = baseColor[0] + (255 - baseColor[0]) * glow;
-            let gC = baseColor[1] + (255 - baseColor[1]) * glow;
-            let bC = baseColor[2] + (255 - baseColor[2]) * glow;
+            
+            if (n.W === -1) baseColor = [30, 41, 59]; // Архивирован (очень темный)
+            else if (n.W === 1) baseColor = [100, 116, 139]; // Заморожен (серый)
+            else if (n.energy === 0) baseColor = [74, 222, 128]; // Зеленый
+            else if (n.energy === 1) baseColor = [96, 165, 250]; // Синий
+            else if (n.energy === 2) baseColor = [192, 132, 252]; // Фиолетовый
+            else baseColor = [251, 191, 36]; // Золотой
 
             ctx.beginPath();
-            ctx.arc(n.x, n.y, r + glow * 10, 0, Math.PI * 2);
-            ctx.fillStyle = `rgb(${rC}, ${gC}, ${bC})`;
+            ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+            ctx.fillStyle = `rgb(${baseColor[0]}, ${baseColor[1]}, ${baseColor[2]})`;
             ctx.fill();
             
-            if (glow > 0) {
-                ctx.strokeStyle = `rgba(255,255,255,${glow})`;
-                ctx.lineWidth = 2;
-                ctx.stroke();
-            }
+            ctx.strokeStyle = n.W === 0 ? 'rgba(255,255,255,0.8)' : '#334155';
+            ctx.lineWidth = 2;
+            ctx.stroke();
 
-            // Рисуем красивую подпись
-            ctx.fillStyle = n.W ? '#475569' : '#fff';
+            ctx.fillStyle = n.W === 0 ? '#fff' : '#64748b';
             ctx.font = 'bold 12px monospace';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
@@ -324,16 +392,6 @@
 
     (async () => {
         await initModel();
-        if (extractor) {
-            const text = "moscow is a city . beijing is a city . london is a city . apple is a fruit . banana is a fruit";
-            let words = text.split(" ");
-            for (let i = 0; i < words.length; i++) {
-                for (let j = i+1; j < Math.min(i+3, words.length); j++) {
-                    await addEdge(words[i], words[j]);
-                }
-            }
-            log("Base graph ready.");
-        }
         loop();
     })();
 </script>
