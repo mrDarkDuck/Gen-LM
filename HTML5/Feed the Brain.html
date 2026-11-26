@@ -182,7 +182,7 @@
                     }
                 });
 
-                if (bestMatch && maxSim > 0.2) {
+                if (bestMatch && maxSim > 0.35) {
                     node.edges.push({ target: bestMatch, weight: 1 });
                     bestMatch.edges.push({ target: node, weight: 1 });
                     log(`🔗 Linked "${text}" to "${bestMatch.text}" (Sim: ${maxSim.toFixed(2)})`, "#60a5fa");
