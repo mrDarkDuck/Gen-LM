@@ -13,7 +13,7 @@ $$
 where:
 - $V_t$ is a finite set of nodes (concepts);
 - $E_t \subseteq V_t \times V_t$ is a set of directed edges (DAG);
-- $s_t : V_t \to \mathcal{X} \times \mathbb{N} \times \{0,1\} \times \mathbb{N}$ is the state function.
+- $s_t : V_t \to \mathcal{X} \times \mathbb{N} \times \{0, 1, -1\} \times \mathbb{N}$ is the state function.
 
 The state of a node $v \in V_t$:
 
@@ -24,7 +24,7 @@ $$
 where:
 - $x_v \in \mathbb{R}^d$ is the **meaning vector** (embedding, $d = 384$ for MiniLM);
 - $e_v \in \mathbb{N}$ is the **abstraction level** (energy);
-- $w_v \in \{0, 1\}$ is the **freeze flag** ($w_v = 1$ means the node was "used" in a merge);
+- $w_v \in \{0, 1, -1\}$ is the **state flag**: $0$ — active, $1$ — frozen (merged), $-1$ — archived (shattered).
 - $\ell_v \in \mathbb{N}$ is the **component level** (model hierarchy).
 
 Edges have a weight assigned:
@@ -38,6 +38,8 @@ Similarity metric (cosine similarity):
 $$
 \sigma(x_u, x_v) = \frac{\langle x_u, x_v \rangle}{\|x_u\| \cdot \|x_v\|} \in [-1, 1]
 $$
+
+Merge threshold $\theta_{\text{merge}} \in (0, 1]$. Since \(\theta_{\text{merge}} > 0\), vectors cannot be strictly opposite ($x_u \neq -x_v$), ensuring zero-division protection during normalization.
 
 ---
 
@@ -138,10 +140,10 @@ $$
 
 ### 3.3 Shatter / Descent
 
-If $w_v = 1$ and $e_v > 0$, the shatter operation does not create new vectors (since averaging is irreversible). Instead, it **unfreezes** the original parents and deactivates the node itself:
+If $w_v = 1$ and $e_v > 0$, the shatter operation does not create new vectors (since averaging is irreversible). Instead, it **unfreezes** the original parents and **archives** the node itself:
 
 $$
-\text{Sh}(v) \to \text{Unfreeze}(u, v^*) \quad \text{and} \quad w_v \leftarrow 1 \ \text{(node v is archived)}
+\text{Sh}(v) \to \text{Unfreeze}(u, v^*) \quad \text{and} \quad w_v \leftarrow -1 \ \text{(node v is archived)}
 $$
 
 $$
@@ -173,7 +175,7 @@ $$
 
 *(Edges created during **Spawn** go from level $e>0$ to level $e=0$, which is an exception that creates "fresh blood" in the system).*
 
-**I4. Flag $W$.** If $w_v = 1$, then $v$ no longer participates in merges:
+**I4. State flag $W$.** If $w_v = 1$, then $v$ no longer participates in merges (until a possible shatter):
 
 $$
 w_v = 1 \implies \forall t' > t : \nexists u, \ v \in \text{Merge}(t')
@@ -203,7 +205,7 @@ This provides **asymptotic slowing** without an external "ceiling".
 
 ### 5.2 Arrow of Time
 
-Let $T_w(t)$ be the set of nodes with $e > 0$. Then:
+Let $T_w(t)$ be the set of nodes with $e > 0$. Then **on trajectories without the Shatter operation**:
 
 $$
 T_w \text{ grows monotonically by inclusion}
