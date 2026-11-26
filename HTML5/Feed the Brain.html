@@ -40,8 +40,8 @@
         </div>
 
         <div class="slider-container">
-            Merge Threshold <span id="thresholdVal" class="slider-val">0.70</span>
-            <input type="range" id="thresholdSlider" min="0.4" max="0.95" step="0.01" value="0.70" disabled>
+            Merge Threshold <span id="thresholdVal" class="slider-val">0.45</span>
+            <input type="range" id="thresholdSlider" min="0.30" max="0.95" step="0.01" value="0.45" disabled>
         </div>
 
         <div id="log">
@@ -66,13 +66,12 @@
     const slider = document.getElementById('thresholdSlider');
     const thresholdVal = document.getElementById('thresholdVal');
     
-    let mergeThreshold = 0.70;
+    let mergeThreshold = 0.45; // Снижен порог для наглядности
     let width, height;
     let nodes = [];
     let nextId = 0;
     let extractor = null;
     let isProcessing = false;
-    let selectedForShatter = null;
 
     function resize() {
         width = window.innerWidth;
@@ -93,11 +92,13 @@
 
     async function initModel() {
         try {
-            extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { quantized: true });
+            // Используем мультиязычную модель, чтобы работало и на русском
+            extractor = await pipeline('feature-extraction', 'Xenova/paraphrase-multilingual-MiniLM-L12-v2', { quantized: true });
             statusEl.innerText = "✅ Model loaded. Ready.";
             inputEl.disabled = false;
             feedBtn.disabled = false;
             slider.disabled = false;
+            conflictBtn.disabled = false;
             log("Embedding model loaded.");
         } catch (e) {
             statusEl.innerText = "❌ Error loading model.";
@@ -105,7 +106,6 @@
         }
     }
 
-    // --- L2-НОРМАЛИЗАЦИЯ ВЕКТОРА (Исправление 1) ---
     function normalizeVec(vec) {
         let sumSq = 0;
         for (let v of vec) sumSq += v * v;
@@ -132,7 +132,7 @@
             this.vec = vec;
             this.energy = energy;
             this.W = 0; // 0 = active, 1 = frozen (merged), -1 = archived (shattered)
-            this.parents = []; // Ссылки на родителей для Shatter
+            this.parents = []; 
             this.edges = [];
             this.x = width/2 + (Math.random()-0.5)*200;
             this.y = height/2 + (Math.random()-0.5)*200;
@@ -148,70 +148,7 @@
         } catch (e) { return null; }
     }
 
-    // --- СПАВН ЧЕРЕЗ КОНФЛИКТ (Исправление 2) ---
-    async function spawnConflict() {
-        // Ищем два активных узла с низким сходством
-        let activeNodes = nodes.filter(n => n.W === 0);
-        if (activeNodes.length < 2) {
-            log("Need at least 2 active nodes for conflict.", "#f87171");
-            return;
-        }
-
-        let u = activeNodes[0], v = activeNodes[1];
-        let minSim = 1.0;
-        
-        // Ищем максимально далекую пару
-        for (let i = 0; i < activeNodes.length; i++) {
-            for (let j = i+1; j < activeNodes.length; j++) {
-                let sim = cosineSimilarity(activeNodes[i].vec, activeNodes[j].vec);
-                if (sim < minSim) {
-                    minSim = sim;
-                    u = activeNodes[i];
-                    v = activeNodes[j];
-                }
-            }
-        }
-
-        if (minSim > 0.5) {
-            log("No strong conflicts found (all nodes are too similar).", "#f87171");
-            return;
-        }
-
-        // Создаем разностный вектор x_z = (x_u - x_v) / ||x_u - x_v||
-        let diffVec = u.vec.map((val, idx) => val - v.vec[idx]);
-        let newVec = normalizeVec(diffVec);
-
-        let newNode = new Node(`Conflict`, newVec, 0);
-        newNode.x = (u.x + v.x) / 2;
-        newNode.y = (u.y + v.y) / 2;
-        newNode.parents = [u, v];
-        
-        // Добавляем связи
-        newNode.edges.push({ target: u, weight: 1 });
-        newNode.edges.push({ target: v, weight: 1 });
-        u.edges.push({ target: newNode, weight: 1 });
-        v.edges.push({ target: newNode, weight: 1 });
-
-        nodes.push(newNode);
-        log(`⚡ SPAWNED CONFLICT: (${u.text} - ${v.text})`, "#f59e0b");
-    }
-
-    // --- РАСПАД (SHATTER) (Исправление 3) ---
-    function shatterNode(n) {
-        if (n.W !== 1) return; // Только замороженные узлы можно распаковать
-        
-        n.W = -1; // Архивируем узел (он остается на экране, но деактивируется)
-        log(`💥 SHATTERED: ${n.text}`, "#c084fc");
-        
-        // Размораживаем родителей
-        if (n.parents && n.parents.length > 0) {
-            n.parents.forEach(p => {
-                if (p.W === 1) p.W = 0;
-                log(`↩️ Unfroze parent: ${p.text}`, "#4ade80");
-            });
-        }
-    }
-
+    // --- ЛОГИКА ДОБАВЛЕНИЯ СЛОВА С АВТО-СВЯЗЬЮ ---
     async function feedText() {
         if (isProcessing || !extractor) return;
         let text = inputEl.value.toLowerCase().trim();
@@ -228,6 +165,25 @@
                 let node = new Node(text, vec);
                 nodes.push(node);
                 log(`✨ Embedded: "${text}"`);
+
+                // АВТО-СВЯЗЬ: Ищем самый похожий активный узел и соединяем ребром
+                let bestMatch = null;
+                let maxSim = -1;
+                nodes.forEach(n => {
+                    if (n.id !== node.id && n.W === 0) {
+                        let sim = cosineSimilarity(node.vec, n.vec);
+                        if (sim > maxSim) {
+                            maxSim = sim;
+                            bestMatch = n;
+                        }
+                    }
+                });
+
+                if (bestMatch && maxSim > 0.2) { // Если есть хоть какая-то связь
+                    node.edges.push({ target: bestMatch, weight: 1 });
+                    bestMatch.edges.push({ target: node, weight: 1 });
+                    log(`🔗 Linked "${text}" to "${bestMatch.text}" (Sim: ${maxSim.toFixed(2)})`, "#60a5fa");
+                }
             }
         } else {
             log(`Node "${text}" already active.`);
@@ -239,11 +195,66 @@
         isProcessing = false;
     }
 
+    async function spawnConflict() {
+        let activeNodes = nodes.filter(n => n.W === 0);
+        if (activeNodes.length < 2) {
+            log("Need at least 2 active nodes.", "#f87171");
+            return;
+        }
+
+        let u = activeNodes[0], v = activeNodes[1];
+        let minSim = 1.0;
+        
+        for (let i = 0; i < activeNodes.length; i++) {
+            for (let j = i+1; j < activeNodes.length; j++) {
+                let sim = cosineSimilarity(activeNodes[i].vec, activeNodes[j].vec);
+                if (sim < minSim) {
+                    minSim = sim;
+                    u = activeNodes[i];
+                    v = activeNodes[j];
+                }
+            }
+        }
+
+        if (minSim > 0.5) {
+            log("No strong conflicts found.", "#f87171");
+            return;
+        }
+
+        let diffVec = u.vec.map((val, idx) => val - v.vec[idx]);
+        let newVec = normalizeVec(diffVec);
+
+        let newNode = new Node(`Conflict`, newVec, 0);
+        newNode.x = (u.x + v.x) / 2;
+        newNode.y = (u.y + v.y) / 2;
+        newNode.parents = [u, v];
+        
+        newNode.edges.push({ target: u, weight: 1 });
+        newNode.edges.push({ target: v, weight: 1 });
+        u.edges.push({ target: newNode, weight: 1 });
+        v.edges.push({ target: newNode, weight: 1 });
+
+        nodes.push(newNode);
+        log(`⚡ SPAWNED CONFLICT (Sim: ${minSim.toFixed(2)})`, "#f59e0b");
+    }
+
+    function shatterNode(n) {
+        if (n.W !== 1) return; 
+        n.W = -1; 
+        log(`💥 SHATTERED: ${n.text}`, "#c084fc");
+        
+        if (n.parents && n.parents.length > 0) {
+            n.parents.forEach(p => {
+                if (p.W === 1) p.W = 0;
+                log(`↩️ Unfroze parent: ${p.text}`, "#4ade80");
+            });
+        }
+    }
+
     feedBtn.addEventListener('click', feedText);
     inputEl.addEventListener('keypress', (e) => { if (e.key === 'Enter') feedText(); });
     conflictBtn.addEventListener('click', spawnConflict);
     
-    // Клик по холсту (для Shatter)
     canvas.addEventListener('mousedown', (e) => {
         const rect = canvas.getBoundingClientRect();
         let mx = e.clientX - rect.left;
@@ -269,12 +280,10 @@
         for (let i = 0; i < nodes.length; i++) {
             for (let j = i+1; j < nodes.length; j++) {
                 let n1 = nodes[i], n2 = nodes[j];
-                // Слияние только активных узлов (W === 0) и с одинаковой энергией
                 if (n1.W !== 0 || n2.W !== 0 || n1.energy !== n2.energy || n1.energy >= 3) continue;
                 
                 let sim = cosineSimilarity(n1.vec, n2.vec);
                 if (sim > mergeThreshold) {
-                    // L2-нормализация (Исправление 1)
                     let sumVec = n1.vec.map((v, idx) => v + n2.vec[idx]);
                     let newVec = normalizeVec(sumVec);
                     
@@ -286,13 +295,12 @@
 
                     n1.W = 1; n2.W = 1;
                     
-                    // Устранение дублирования рёбер (Исправление 2)
                     let allEdges = [...n1.edges, ...n2.edges];
                     allEdges.forEach(e => {
                         if (e.target.W === 0 && e.target !== n1 && e.target !== n2) {
                             const existing = newNode.edges.find(ex => ex.target.id === e.target.id);
                             if (existing) {
-                                existing.weight += e.weight; // Суммируем вес
+                                existing.weight += e.weight;
                             } else {
                                 newNode.edges.push({ target: e.target, weight: e.weight });
                                 e.target.edges.push({ target: newNode, weight: e.weight });
@@ -301,7 +309,7 @@
                     });
                     
                     nodes.push(newNode);
-                    log(`🧬 MERGED: ${n1.text} + ${n2.text} (Sim: ${sim.toFixed(2)})`);
+                    log(`🧬 MERGED: ${n1.text} + ${n2.text} (Sim: ${sim.toFixed(2)})`, "#4ade80");
                     merged = true;
                     break;
                 }
@@ -342,29 +350,27 @@
     function draw() {
         ctx.clearRect(0, 0, width, height);
         
-        // Рисуем ребра
         nodes.forEach(n => {
             n.edges.forEach(e => {
                 ctx.beginPath();
                 ctx.moveTo(n.x, n.y);
                 ctx.lineTo(e.target.x, e.target.y);
-                ctx.strokeStyle = `rgba(96, 165, 250, 0.2)`;
+                ctx.strokeStyle = `rgba(96, 165, 250, 0.3)`;
                 ctx.lineWidth = e.weight;
                 ctx.stroke();
             });
         });
 
-        // Рисуем узлы
         nodes.forEach(n => {
             let r = 15 + n.energy * 10;
             let baseColor;
             
-            if (n.W === -1) baseColor = [30, 41, 59]; // Архивирован (очень темный)
-            else if (n.W === 1) baseColor = [100, 116, 139]; // Заморожен (серый)
-            else if (n.energy === 0) baseColor = [74, 222, 128]; // Зеленый
-            else if (n.energy === 1) baseColor = [96, 165, 250]; // Синий
-            else if (n.energy === 2) baseColor = [192, 132, 252]; // Фиолетовый
-            else baseColor = [251, 191, 36]; // Золотой
+            if (n.W === -1) baseColor = [30, 41, 59]; 
+            else if (n.W === 1) baseColor = [100, 116, 139]; 
+            else if (n.energy === 0) baseColor = [74, 222, 128]; 
+            else if (n.energy === 1) baseColor = [96, 165, 250]; 
+            else if (n.energy === 2) baseColor = [192, 132, 252]; 
+            else baseColor = [251, 191, 36]; 
 
             ctx.beginPath();
             ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
