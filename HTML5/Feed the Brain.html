@@ -169,11 +169,12 @@
                 nodes.push(node);
                 log(`✨ Embedded: "${text}"`);
 
-                // Авто-связь с самым похожим
+                // АВТО-СВЯЗЬ: Ищем самый похожий АКТИВНЫЙ БАЗОВЫЙ узел
                 let bestMatch = null;
                 let maxSim = -1;
                 nodes.forEach(n => {
-                    if (n.id !== node.id && n.W === 0) {
+                    // ИСПРАВЛЕНИЕ: Игнорируем концепты (energy > 0) и самого себя
+                    if (n.id !== node.id && n.W === 0 && n.energy === 0) {
                         let sim = cosineSimilarity(node.vec, n.vec);
                         if (sim > maxSim) {
                             maxSim = sim;
@@ -182,15 +183,12 @@
                     }
                 });
 
-                if (bestMatch && maxSim > 0.35) {
+                // Требуем сходство не ниже 0.40, чтобы не было случайных связей
+                if (bestMatch && maxSim > 0.40) { 
                     node.edges.push({ target: bestMatch, weight: 1 });
                     bestMatch.edges.push({ target: node, weight: 1 });
                     log(`🔗 Linked "${text}" to "${bestMatch.text}" (Sim: ${maxSim.toFixed(2)})`, "#60a5fa");
                 }
-            }
-        } else {
-            log(`Node "${text}" already active.`);
-        }
         
         inputEl.value = '';
         statusEl.innerText = "✅ Ready.";
